@@ -6,5 +6,6 @@
   "tabWidth": 2,
   "jsxSingleQuote": false,
   "trailingComma": "all",
-  "semi": true
+  "semi": true,
+  "printWidth": 100
 }
