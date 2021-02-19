@@ -1,4 +1,5 @@
 import Head from "next/head";
+import Link from "next/link";
 import styles from "../styles/Home.module.css";
 import { Button, Container, Header } from "semantic-ui-react";
 
@@ -49,7 +50,9 @@ export default function Home() {
             faucibus pulvinar, nunc augue vulputate est, non sollicitudin velit dolor rutrum dui.
             Curabitur eget est enim.
           </p>
-          <Button primary>Test Btn</Button>
+          <Link href="/dashboard">
+            <Button primary>Test Btn</Button>
+          </Link>
         </Container>
       </main>
 
