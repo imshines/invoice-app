@@ -2,8 +2,13 @@
   width: 100%;
   min-height: 100vh;
   background-color: #f3f3f3;
+  padding: 1rem;
 }
 
-.ham {
-  margin-left: 200px;
+.mainWrapper {
+  display: flex;
+}
+
+.contentWrapper {
+  padding: 1rem 0;
 }
