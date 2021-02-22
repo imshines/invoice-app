@@ -1,11 +1,20 @@
 import Head from "next/head";
 import { useState } from "react";
 import { Icon, Input } from "semantic-ui-react";
-import Sidebar from "../components/Sidebar";
-import styles from "../styles/Dashboard.module.css";
+
+import Billing from "./billing";
+import Users from "./users";
+import Home from "./home";
+
+import Sidebar from "../../components/Sidebar";
+import styles from "../../styles/Dashboard.module.css";
 export default function Dashboard() {
   const [toggle, setToggle] = useState(false);
-  const sideItems = ["Home", "Dashboard", "Users", "Invoices", "Screens"];
+  const sideItems = [
+    { menuItem: "Home", route: "/dashboard-page/home" },
+    { menuItem: "Billing", route: "/dashboard-page/billing" },
+    { menuItem: "Users", route: "/dashboard-page/users" },
+  ];
   return (
     <div>
       <Head>
@@ -23,17 +32,9 @@ export default function Dashboard() {
             className={styles.iconStyle}
           />
           <div className={styles.contentWrapper}>
-            <form onSubmit={(e) => e.preventDefault()}>
-              <div>
-                <label htmlFor="Amount">Enter Amount</label>
-                <Input
-                  type="text"
-                  placeholder="Enter Amount"
-                  name="Amount"
-                  style={{ marginLeft: 20 }}
-                />
-              </div>
-            </form>
+            <Billing />
+            <Users />
+            <Home />
           </div>
         </div>
       </div>

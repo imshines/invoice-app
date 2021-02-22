@@ -50,7 +50,7 @@ export default function Home() {
             faucibus pulvinar, nunc augue vulputate est, non sollicitudin velit dolor rutrum dui.
             Curabitur eget est enim.
           </p>
-          <Link href="/dashboard">
+          <Link href="/dashboard-page">
             <Button primary>Test Btn</Button>
           </Link>
         </Container>
