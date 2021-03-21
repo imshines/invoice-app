@@ -1,3 +1,9 @@
+import Layout from "../../components/Layout";
+
 export default function Billing() {
-  return <div>hello billing</div>;
+  return (
+    <Layout>
+      <div className="container"></div>
+    </Layout>
+  );
 }

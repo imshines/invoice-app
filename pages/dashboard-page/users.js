@@ -1,3 +1,5 @@
+import Layout from "../../components/Layout";
+
 export default function Users() {
-  return <div>hello users</div>;
+  return <Layout>hello users</Layout>;
 }

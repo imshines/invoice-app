@@ -1,43 +1,32 @@
 import Head from "next/head";
 import { useState } from "react";
-import { Icon, Input } from "semantic-ui-react";
+import Layout from "../../components/Layout";
 
-import Billing from "./billing";
-import Users from "./users";
-import Home from "./home";
-
-import Sidebar from "../../components/Sidebar";
-import styles from "../../styles/Dashboard.module.css";
 export default function Dashboard() {
-  const [toggle, setToggle] = useState(false);
-  const sideItems = [
-    { menuItem: "Home", route: "/dashboard-page/home" },
-    { menuItem: "Billing", route: "/dashboard-page/billing" },
-    { menuItem: "Users", route: "/dashboard-page/users" },
-  ];
   return (
     <div>
       <Head>
-        <title>Dashboard</title>
+        <title>Super Invoice</title>
       </Head>
-      <div className={styles.mainWrapper}>
-        <div className="">
-          <Sidebar toggle={toggle} items={sideItems} />
-        </div>
-        <div className={styles.container}>
-          <Icon
-            name="align justify"
-            onClick={() => setToggle(!toggle)}
-            size="big"
-            className={styles.iconStyle}
-          />
-          <div className={styles.contentWrapper}>
-            <Billing />
-            <Users />
-            <Home />
+      <Layout>
+        <div className="container">
+          <div className="row">
+            <div className="card col mx-5 my-4 shadow-sm border-none">
+              <h5 className="card-title mx-auto">Profits</h5>
+              <h4 className="card-body text-success mx-auto">$10k</h4>
+            </div>
+            <div className="card col mx-5 my-4 shadow-sm border-none">
+              <h5 className="card-title mx-auto">Budget</h5>
+              <h4 className="card-body text-warning mx-auto">$10M</h4>
+            </div>
+            <div className="card col mx-5 my-4 shadow-sm border-none">
+              <h5 className="card-title mx-auto">Expenses</h5>
+              <h4 className="card-body text-danger mx-auto">$50k</h4>
+            </div>
           </div>
+          <div className="row"></div>
         </div>
-      </div>
+      </Layout>
     </div>
   );
 }

@@ -1,6 +1,6 @@
-import "semantic-ui-css/semantic.min.css";
-import "bootstrap/dist/css/bootstrap-grid.min.css";
-import "../styles/globals.css";
+// import "bootstrap/dist/js/bootstrap";
+import "bootstrap/dist/css/bootstrap.css";
+import "../styles/globals.scss";
 
 function MyApp({ Component, pageProps }) {
   return <Component {...pageProps} />;
