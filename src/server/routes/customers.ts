@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { db } from "../db";
-import { customers, invoices, payments } from "../db/schema";
+import { customers, invoices, payments, organizations } from "../db/schema";
 import { eq, ilike, or, desc } from "drizzle-orm";
 
 export const customersRoute = new Hono()
@@ -14,7 +14,14 @@ export const customersRoute = new Hono()
       query = db
         .select()
         .from(customers)
-        .where(or(ilike(customers.name, `%${q}%`), ilike(customers.phone, `%${q}%`))) as any;
+        .where(
+          or(
+            ilike(customers.name, `%${q}%`),
+            ilike(customers.phone, `%${q}%`),
+            ilike(customers.area, `%${q}%`),
+            ilike(customers.customerCode, `%${q}%`)
+          )
+        ) as any;
     }
 
     const list = await query.orderBy(desc(customers.updatedAt));
@@ -27,7 +34,6 @@ export const customersRoute = new Hono()
       return c.json({ error: "Customer not found" }, 404);
     }
 
-    // Fetch recent invoices and payments for customer Khata ledger
     const customerInvoices = await db
       .select()
       .from(invoices)
@@ -53,32 +59,82 @@ export const customersRoute = new Hono()
     zValidator(
       "json",
       z.object({
-        name: z.string().min(2),
+        customerCode: z.string().optional(),
+        name: z.string().min(1, "Customer name is required"),
+        area: z.string().optional(),
+        phone: z.string().min(1, "Contact is required"),
         companyName: z.string().optional(),
         gstin: z.string().optional(),
-        phone: z.string().min(10),
         email: z.string().email().optional().or(z.literal("")),
-        billingAddress: z.string().min(1),
-        city: z.string().default("Coimbatore"),
-        state: z.string().default("Tamil Nadu"),
-        stateCode: z.string().default("33"),
+        billingAddress: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        stateCode: z.string().optional(),
         pinCode: z.string().optional(),
         creditLimit: z.string().default("0.00"),
       })
     ),
     async (c) => {
       const body = c.req.valid("json");
-      const [org] = await db.select().from(db.query ? (customers as any) : customers).limit(1); // placeholder for multi-tenant context
+      const [org] = await db.select().from(organizations).limit(1);
 
       const [newCustomer] = await db
         .insert(customers)
         .values({
-          ...body,
+          organizationId: org ? org.id : undefined,
+          customerCode: body.customerCode || undefined,
+          name: body.name,
+          area: body.area || body.billingAddress || "",
+          phone: body.phone,
+          companyName: body.companyName || undefined,
+          gstin: body.gstin || undefined,
           email: body.email || null,
+          billingAddress: body.billingAddress || body.area || "Local",
+          city: body.city || org?.city || "",
+          state: body.state || org?.state || "",
+          stateCode: body.stateCode || org?.stateCode || "",
+          pinCode: body.pinCode || org?.pinCode || "",
           creditLimit: body.creditLimit || "0.00",
         })
         .returning();
 
       return c.json(newCustomer, 201);
     }
-  );
+  )
+  .put(
+    "/:id",
+    zValidator(
+      "json",
+      z.object({
+        customerCode: z.string().optional(),
+        name: z.string().min(1),
+        area: z.string().optional(),
+        phone: z.string().min(1),
+        companyName: z.string().optional(),
+        gstin: z.string().optional(),
+        billingAddress: z.string().optional(),
+        city: z.string().optional(),
+        creditLimit: z.string().optional(),
+      })
+    ),
+    async (c) => {
+      const id = c.req.param("id");
+      const body = c.req.valid("json");
+
+      const [updated] = await db
+        .update(customers)
+        .set({
+          ...body,
+          updatedAt: new Date(),
+        })
+        .where(eq(customers.id, id))
+        .returning();
+
+      return c.json(updated);
+    }
+  )
+  .delete("/:id", async (c) => {
+    const id = c.req.param("id");
+    await db.delete(customers).where(eq(customers.id, id));
+    return c.json({ success: true });
+  });

@@ -2,8 +2,8 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { db } from "../db";
-import { products, stockMovements } from "../db/schema";
-import { eq, ilike, or, desc, sql } from "drizzle-orm";
+import { products, stockMovements, organizations } from "../db/schema";
+import { eq, ilike, or, desc } from "drizzle-orm";
 
 export const productsRoute = new Hono()
   .get("/", async (c) => {
@@ -39,7 +39,6 @@ export const productsRoute = new Hono()
       return c.json({ error: "Product not found" }, 404);
     }
 
-    // Fetch product stock movement history
     const movements = await db
       .select()
       .from(stockMovements)
@@ -54,33 +53,42 @@ export const productsRoute = new Hono()
     zValidator(
       "json",
       z.object({
-        name: z.string().min(2),
-        sku: z.string().optional(),
+        sku: z.string().optional(), // ID from legacy stock.php
+        name: z.string().min(1, "Product name is required"),
+        unitOfMeasure: z.string().min(1, "Unit of measure is required"),
+        currentStock: z.string().default("0"),
+        taxPercent: z.string().default("0.00"),
+        purchasePrice: z.string().default("0.00"),
+        sellingPrice: z.string().min(1, "Price is required"),
         barcode: z.string().optional(),
         hsnSac: z.string().default("9999"),
-        unitOfMeasure: z.string().default("PCS"),
-        purchasePrice: z.string().default("0.00"),
-        sellingPrice: z.string().min(1),
-        taxPercent: z.string().default("5.00"),
-        currentStock: z.string().default("0.00"),
         minStockAlert: z.string().default("5.00"),
       })
     ),
     async (c) => {
       const body = c.req.valid("json");
+      const [org] = await db.select().from(organizations).limit(1);
 
       const [newProduct] = await db
         .insert(products)
         .values({
-          ...body,
-          sku: body.sku || null,
+          organizationId: org ? org.id : undefined,
+          sku: body.sku || undefined,
+          name: body.name,
+          unitOfMeasure: body.unitOfMeasure,
+          currentStock: body.currentStock,
+          taxPercent: body.taxPercent,
+          purchasePrice: body.purchasePrice || "0.00",
+          sellingPrice: body.sellingPrice,
           barcode: body.barcode || null,
+          hsnSac: body.hsnSac || "9999",
+          minStockAlert: body.minStockAlert || "5.00",
         })
         .returning();
 
-      // If initial stock is positive, record opening movement
       if (Number(newProduct.currentStock) > 0) {
         await db.insert(stockMovements).values({
+          organizationId: org ? org.id : undefined,
           productId: newProduct.id,
           movementType: "PURCHASE_INWARD",
           quantityDelta: newProduct.currentStock,
@@ -93,12 +101,49 @@ export const productsRoute = new Hono()
       return c.json(newProduct, 201);
     }
   )
+  .put(
+    "/:id",
+    zValidator(
+      "json",
+      z.object({
+        sku: z.string().optional(),
+        name: z.string().min(1),
+        unitOfMeasure: z.string().min(1),
+        currentStock: z.string().optional(),
+        taxPercent: z.string().optional(),
+        purchasePrice: z.string().optional(),
+        sellingPrice: z.string().min(1),
+        barcode: z.string().optional(),
+        hsnSac: z.string().optional(),
+      })
+    ),
+    async (c) => {
+      const id = c.req.param("id");
+      const body = c.req.valid("json");
+
+      const [updated] = await db
+        .update(products)
+        .set({
+          ...body,
+          updatedAt: new Date(),
+        })
+        .where(eq(products.id, id))
+        .returning();
+
+      return c.json(updated);
+    }
+  )
+  .delete("/:id", async (c) => {
+    const id = c.req.param("id");
+    await db.delete(products).where(eq(products.id, id));
+    return c.json({ success: true });
+  })
   .post(
     "/:id/adjust-stock",
     zValidator(
       "json",
       z.object({
-        delta: z.number(), // positive or negative
+        delta: z.number(),
         reason: z.enum(["DAMAGE_WASTE", "AUDIT_ADJUSTMENT", "PURCHASE_INWARD"]),
         notes: z.string().optional(),
       })

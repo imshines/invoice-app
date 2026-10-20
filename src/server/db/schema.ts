@@ -98,8 +98,10 @@ export const customers = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+    customerCode: varchar("customer_code", { length: 50 }), // legacy ID (e.g. C001, 1, 2)
     name: varchar("name", { length: 200 }).notNull(),
     companyName: varchar("company_name", { length: 200 }),
+    area: varchar("area", { length: 255 }), // Area field from legacy cusomer.Area
     gstin: varchar("gstin", { length: 15 }),
     phone: varchar("phone", { length: 20 }).notNull(),
     email: varchar("email", { length: 255 }),
