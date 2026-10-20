@@ -6,18 +6,9 @@ export function proxy(request: NextRequest) {
   const sessionCookie = request.cookies.get("user_session");
   const hasSession = !!(sessionCookie && sessionCookie.value);
 
-  // If logged in and visiting /login, redirect to /generatebill
-  if (pathname === "/login" && hasSession) {
-    return NextResponse.redirect(new URL("/generatebill", request.url));
-  }
-
-  // Protected application routes
+  // Protected administration and billing routes
+  // (We do NOT force-redirect away from /login so users can always switch accounts or sign in)
   const protectedRoutes = [
-    "/",
-    "/generatebill",
-    "/stock",
-    "/customer",
-    "/invoices",
     "/company",
     "/users",
   ];

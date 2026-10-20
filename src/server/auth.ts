@@ -1,5 +1,5 @@
 import { Context, Next } from "hono";
-import { getCookie } from "hono/cookie";
+import { getCookie, deleteCookie } from "hono/cookie";
 import { db } from "./db";
 import { users, organizations } from "./db/schema";
 import { eq } from "drizzle-orm";
@@ -14,7 +14,7 @@ export interface SessionUser {
 
 /**
  * Retrieves the currently logged in user based on the `user_session` cookie.
- * Returns null if no session exists or user is not found.
+ * If the session cookie is invalid or user no longer exists, clears the stale cookie.
  */
 export async function getSessionUser(c: Context): Promise<SessionUser | null> {
   const sessionUserId = getCookie(c, "user_session");
@@ -36,6 +36,8 @@ export async function getSessionUser(c: Context): Promise<SessionUser | null> {
     .limit(1);
 
   if (!user || !user.isActive) {
+    // Clear stale or deleted session cookie
+    deleteCookie(c, "user_session", { path: "/" });
     return null;
   }
 
@@ -48,6 +50,7 @@ export async function getSessionUser(c: Context): Promise<SessionUser | null> {
 export async function requireAuth(c: Context, next: Next) {
   const user = await getSessionUser(c);
   if (!user) {
+    deleteCookie(c, "user_session", { path: "/" });
     return c.json({ error: "Unauthorized: Please log in to continue." }, 401);
   }
 
@@ -62,6 +65,7 @@ export function requireRole(...allowedRoles: Array<SessionUser["role"]>) {
   return async (c: Context, next: Next) => {
     const user = await getSessionUser(c);
     if (!user) {
+      deleteCookie(c, "user_session", { path: "/" });
       return c.json({ error: "Unauthorized: Please log in to continue." }, 401);
     }
 

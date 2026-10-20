@@ -70,6 +70,7 @@ export default function GenerateBillPage() {
 
   // Line items
   const [rows, setRows] = useState<BillRow[]>([]);
+  const [dataLoading, setDataLoading] = useState<boolean>(true);
 
   // Payment
   const [paymentMode, setPaymentMode] = useState<"CASH" | "UPI" | "CARD" | "BANK_TRANSFER">("CASH");
@@ -86,6 +87,7 @@ export default function GenerateBillPage() {
   }, []);
 
   async function loadData() {
+    setDataLoading(true);
     try {
       const [custRes, prodRes] = await Promise.all([
         fetch("/api/customers").then((r) => r.json()),
@@ -95,6 +97,8 @@ export default function GenerateBillPage() {
       if (Array.isArray(prodRes)) setProducts(prodRes);
     } catch (err) {
       console.error("Failed to load reference data:", err);
+    } finally {
+      setDataLoading(false);
     }
   }
 
@@ -421,9 +425,21 @@ export default function GenerateBillPage() {
 
             {/* Product Cards List */}
             <div className="max-h-[520px] overflow-y-auto space-y-2 pr-1">
-              {filteredCatalog.length === 0 ? (
-                <div className="text-center py-8 text-xs text-slate-500">
-                  No matching products. Click "+ Custom Item" to add an ad-hoc line.
+              {dataLoading ? (
+                <div className="text-center py-12 text-xs text-slate-400 flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                  <span>Loading products catalog...</span>
+                </div>
+              ) : filteredCatalog.length === 0 ? (
+                <div className="text-center py-8 text-xs text-slate-500 space-y-2">
+                  <div>No matching products. Click "+ Custom Item" to add an ad-hoc line.</div>
+                  <button
+                    type="button"
+                    onClick={loadData}
+                    className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded-lg text-xs font-bold transition-colors"
+                  >
+                    ↻ Reload Catalog
+                  </button>
                 </div>
               ) : (
                 filteredCatalog.map((prod) => {

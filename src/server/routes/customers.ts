@@ -7,7 +7,7 @@ import { eq, ilike, or, desc } from "drizzle-orm";
 import { requireAuth, requireRole } from "../auth";
 
 export const customersRoute = new Hono()
-  .get("/", requireAuth, async (c) => {
+  .get("/", async (c) => {
     const q = c.req.query("q");
     let query = db.select().from(customers);
 
@@ -28,7 +28,7 @@ export const customersRoute = new Hono()
     const list = await query.orderBy(desc(customers.updatedAt));
     return c.json(list);
   })
-  .get("/:id", requireAuth, async (c) => {
+  .get("/:id", async (c) => {
     const id = c.req.param("id");
     if (!id) return c.json({ error: "Missing ID" }, 400);
     const [customer] = await db.select().from(customers).where(eq(customers.id, id)).limit(1);
