@@ -1,36 +1,88 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Sri Hari Traders — Modern Billing, Inventory & Khata ERP
 
-## Getting Started
+A complete, enterprise-grade rewrite of the legacy PHP/MySQL billing application into a high-speed, modern full-stack web application built with **Next.js 16 (App Router & Turbopack)**, **Hono Backend**, **PostgreSQL 18**, **Drizzle ORM**, and **Tailwind CSS**.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 🚀 Key Modernizations & Features
+
+| Capability | Legacy PHP App (`qwerty`) | Modern ERP v2 |
+| :--- | :--- | :--- |
+| **Framework** | PHP 5.6 / MariaDB / jQuery | **Next.js 16.4.2** (Turbopack, App Router) + **Hono API** |
+| **Database** | Raw MySQL queries, SQL injections | **PostgreSQL 18** (ACID transactions, Drizzle ORM, strict types) |
+| **Invoice Storage** | Invoices were **NEVER saved** to DB | **Persistent Tax Invoices** with immutable JSONB customer/seller snapshots |
+| **Inventory Tracking** | Static counter without movement log | **Double-Entry Stock Ledger** (`stock_movements`) with low-stock alerts |
+| **Tax Compliance** | Arbitrary generic text field | **Indian GST Engine** (Automated CGST/SGST vs IGST split & HSN codes) |
+| **Payments** | No payment tracking | **Dynamic UPI QR Code** (0% MDR direct settlement) + Split payments |
+| **Customer Credit** | Basic unlinked phone list | **Customer Khata (Credit) Ledger** with outstanding balance tracking |
+| **Checkout UX** | Slow mouse-driven page | **High-Speed Counter POS** with barcode scanner support & hotkeys |
+| **Printing** | None | **80mm Thermal Receipt** & **A4 Tax Invoice** Print Layouts |
+| **Docker Support** | None | Full **`docker-compose.yml`** and multi-stage **`Dockerfile`** |
+
+---
+
+## 🛠️ Architecture & Tech Stack
+
+```
+Frontend:   Next.js 16.4.2 (App Router, Turbopack, Tailwind CSS, Lucide Icons)
+Backend:    Hono v4 (Mounted on /api/[[...route]], Hono RPC hc<AppType>)
+Database:   PostgreSQL 18 (Localhost port 5433 or Docker container)
+ORM:        Drizzle ORM with Drizzle Kit migrations
+QR Engine:  qrcode (NPCI Bharat/UPI compliant payload generator)
+Auth:       bcryptjs password hashing & role-based access control
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## ⚡ Quick Start (Running Locally)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 1. Prerequisites
+- **Node.js**: v20+ (tested on Node v24.18)
+- **Database**: PostgreSQL 18 running on port `5433` (or Docker Desktop)
 
-## Learn More
+### 2. Environment Setup
+The project is preconfigured in `.env.local`:
+```env
+DATABASE_URL=postgresql://postgres:root@127.0.0.1:5433/invoice_db
+AUTH_SECRET=f3b89a9c27d8e4125b0e8c312781498b7a42167d3e512401986421598214abc1
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
 
-To learn more about Next.js, take a look at the following resources:
+### 3. Run Migrations & Seed Sample Data
+```bash
+# Push database schema to PostgreSQL 18
+npx drizzle-kit push
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# Seed organization, sample products with stock, and Khata customers
+npx tsx src/server/db/seed.ts
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 4. Start the Application
+```bash
+npm run dev
+```
+Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 🐳 Running with Docker
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+If you prefer containerized deployment with Docker:
+```bash
+docker compose up -d --build
+```
+This starts:
+- The Next.js 16 + Hono Application on port `3000`
+- PostgreSQL 18 on port `5434`
+- Mailpit Email Inspector on port `8025`
+
+---
+
+## 📖 Navigation & Routes
+
+- **Dashboard** (`/`): Real-time sales velocity, revenue, Khata receivables, and low-stock alerts.
+- **Quick POS** (`/pos`): High-speed checkout counter with barcode scanner support, real-time gross profit margin calculator, dynamic UPI QR code generator, and instant receipt printing.
+- **Sales Invoices** (`/invoices`): Audited list of finalized tax invoices, payment statuses, and printable invoice viewer.
+- **Stock & Inventory** (`/products`): Catalog management, stock balance alerts, and inventory movement adjustments.
+- **Customers & Khata** (`/customers`): Customer directory, credit limits, and Khata ledger statements.
+- **Company Settings** (`/settings`): Business legal name, GSTIN, UPI VPA (for payment QR), and thermal receipt headers/footers.
