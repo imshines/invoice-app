@@ -1,0 +1,56 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: invoice_app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/invoice_db?sslmode=disable
+      - AUTH_SECRET=f3b89a9c27d8e4125b0e8c312781498b7a42167d3e512401986421598214abc1
+      - NEXT_PUBLIC_APP_URL=http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - invoice_net
+
+  postgres:
+    image: postgres:18-alpine
+    container_name: invoice_postgres
+    restart: unless-stopped
+    ports:
+      - "5434:5432" # Uses 5434 on host to prevent conflicting with native PostgreSQL on 5433
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: invoice_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - invoice_net
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: invoice_mailpit
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    networks:
+      - invoice_net
+
+volumes:
+  pgdata:
+
+networks:
+  invoice_net:
+    driver: bridge
