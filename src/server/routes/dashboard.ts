@@ -2,8 +2,9 @@ import { Hono } from "hono";
 import { db } from "../db";
 import { invoices, products, customers, organizations } from "../db/schema";
 import { sql, desc, eq } from "drizzle-orm";
+import { requireAuth } from "../auth";
 
-export const dashboardRoute = new Hono().get("/stats", async (c) => {
+export const dashboardRoute = new Hono().get("/stats", requireAuth, async (c) => {
   const today = new Date().toISOString().split("T")[0];
 
   // 1. Total & Today's Sales

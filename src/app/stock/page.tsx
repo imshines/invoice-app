@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Edit, X, Search, Boxes, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, Edit, X, Search, Boxes, AlertTriangle, ShieldCheck } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 
 export default function StockPage() {
+  const { isAdmin } = useAuth();
   const [products, setProducts] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -71,7 +73,7 @@ export default function StockPage() {
     e.preventDefault();
     try {
       if (editingProduct) {
-        await fetch(`/api/products/${editingProduct.id}`, {
+        const res = await fetch(`/api/products/${editingProduct.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -83,8 +85,13 @@ export default function StockPage() {
             sellingPrice: formData.price,
           }),
         });
+        if (!res.ok) {
+          const errData = await res.json();
+          alert(errData.error || "Failed to update product");
+          return;
+        }
       } else {
-        await fetch("/api/products", {
+        const res = await fetch("/api/products", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -96,6 +103,11 @@ export default function StockPage() {
             sellingPrice: formData.price,
           }),
         });
+        if (!res.ok) {
+          const errData = await res.json();
+          alert(errData.error || "Failed to create product");
+          return;
+        }
       }
 
       setIsModalOpen(false);
@@ -108,8 +120,13 @@ export default function StockPage() {
   async function handleDelete(id: string) {
     if (confirm("Are you sure you want to delete this product?")) {
       try {
-        await fetch(`/api/products/${id}`, { method: "DELETE" });
-        loadProducts();
+        const res = await fetch(`/api/products/${id}`, { method: "DELETE" });
+        if (res.ok) {
+          loadProducts();
+        } else {
+          const errData = await res.json();
+          alert(errData.error || "Failed to delete product");
+        }
       } catch (err) {
         console.error("Failed to delete product:", err);
       }
@@ -148,13 +165,19 @@ export default function StockPage() {
             <Search className="w-3.5 h-3.5 text-slate-500 absolute right-3 top-2.5" />
           </div>
 
-          <button
-            onClick={openAddModal}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Product</span>
-          </button>
+          {isAdmin ? (
+            <button
+              onClick={openAddModal}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Product</span>
+            </button>
+          ) : (
+            <div className="text-[11px] text-slate-400 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 font-mono">
+              Cashier Read-Only
+            </div>
+          )}
         </div>
       </div>
 
@@ -167,7 +190,7 @@ export default function StockPage() {
                 <th className="px-4 py-3">ID</th>
                 <th className="px-4 py-3">Product Name</th>
                 <th className="px-4 py-3">Unit Of Measure</th>
-                <th className="px-4 py-3 text-center">Quantity</th>
+                <th className="px-4 py-3 text-center">Available Stock</th>
                 <th className="px-4 py-3 text-right">Selling Price</th>
                 <th className="px-4 py-3 text-center w-28">Actions</th>
               </tr>
@@ -182,12 +205,15 @@ export default function StockPage() {
               ) : filtered.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="text-center py-10 text-slate-500">
-                    No products found. Click "Add Product" to create one.
+                    No products found in catalog.
                   </td>
                 </tr>
               ) : (
                 filtered.map((prod) => {
-                  const isLow = Number(prod.currentStock) <= 5;
+                  const stockNum = parseFloat(prod.currentStock) || 0;
+                  const isOutOfStock = stockNum <= 0;
+                  const isLow = stockNum > 0 && stockNum <= 5;
+
                   return (
                     <tr key={prod.id} className="hover:bg-slate-800/40 transition-colors">
                       <td className="px-4 py-3 font-mono text-emerald-400 font-semibold">
@@ -200,11 +226,24 @@ export default function StockPage() {
                         {prod.unitOfMeasure}
                       </td>
                       <td className="px-4 py-3 text-center font-bold font-mono">
-                        <span className={isLow ? "text-rose-400" : "text-white"}>
+                        <span
+                          className={
+                            isOutOfStock
+                              ? "text-rose-500 font-black"
+                              : isLow
+                              ? "text-amber-400"
+                              : "text-white"
+                          }
+                        >
                           {prod.currentStock}
                         </span>
-                        {isLow && (
+                        {isOutOfStock && (
                           <span className="ml-1.5 text-[10px] text-rose-400 font-bold">
+                            Out of Stock
+                          </span>
+                        )}
+                        {isLow && (
+                          <span className="ml-1.5 text-[10px] text-amber-400 font-bold">
                             ⚠️ Low
                           </span>
                         )}
@@ -212,21 +251,27 @@ export default function StockPage() {
                       <td className="px-4 py-3 text-right font-mono font-bold text-emerald-400">
                         {formatCurrency(prod.sellingPrice)}
                       </td>
-                      <td className="px-4 py-3 text-center space-x-1.5">
-                        <button
-                          onClick={() => openEditModal(prod)}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shadow-xs transition-colors"
-                          title="Edit"
-                        >
-                          <Edit className="w-3.5 h-3.5 inline" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(prod.id)}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 border border-slate-700 shadow-xs transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 inline" />
-                        </button>
+                      <td className="px-4 py-3 text-center">
+                        {isAdmin ? (
+                          <div className="space-x-1.5">
+                            <button
+                              onClick={() => openEditModal(prod)}
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shadow-xs transition-colors"
+                              title="Edit"
+                            >
+                              <Edit className="w-3.5 h-3.5 inline" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(prod.id)}
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 border border-slate-700 shadow-xs transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 inline" />
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-500 font-mono">View Only</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -237,8 +282,8 @@ export default function StockPage() {
         </div>
       </div>
 
-      {/* Add / Edit Product Modal */}
-      {isModalOpen && (
+      {/* Add / Edit Product Modal (Admin Only) */}
+      {isModalOpen && isAdmin && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 rounded-3xl border border-slate-800 max-w-md w-full shadow-2xl overflow-hidden p-6 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
@@ -260,7 +305,6 @@ export default function StockPage() {
                   type="text"
                   value={formData.id}
                   onChange={(e) => setFormData({ ...formData, id: e.target.value })}
-                  placeholder="e.g. P101"
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500"
                 />
               </div>
@@ -272,71 +316,83 @@ export default function StockPage() {
                   type="text"
                   value={formData.pname}
                   onChange={(e) => setFormData({ ...formData, pname: e.target.value })}
-                  placeholder="e.g. Basmati Rice 25kg"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 font-bold"
+                  placeholder="e.g. Prestige Pressure Cooker 5L"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-400 mb-1">Unit of Measure</label>
-                  <input
-                    type="text"
+                  <select
                     value={formData.unit_measure}
                     onChange={(e) => setFormData({ ...formData, unit_measure: e.target.value })}
-                    placeholder="PCS / KG / BAG"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500"
-                  />
+                  >
+                    <option value="PCS">PCS (Pieces)</option>
+                    <option value="KG">KG (Kilograms)</option>
+                    <option value="BAG">BAG (Bags/Sacks)</option>
+                    <option value="TIN">TIN (Tins/Cans)</option>
+                    <option value="BOX">BOX (Boxes)</option>
+                    <option value="LTR">LTR (Liters)</option>
+                  </select>
                 </div>
+
                 <div>
-                  <label className="block text-slate-400 mb-1">Initial Quantity</label>
+                  <label className="block text-slate-400 mb-1">Available Stock (Qty) *</label>
                   <input
+                    required
                     type="number"
+                    min="0"
+                    step="0.01"
                     value={formData.qty}
                     onChange={(e) => setFormData({ ...formData, qty: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500 font-bold"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-400 mb-1">GST Tax %</label>
-                  <input
-                    type="text"
-                    value={formData.percent}
-                    onChange={(e) => setFormData({ ...formData, percent: e.target.value })}
-                    placeholder="5.00"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
                   <label className="block text-slate-400 mb-1">Selling Price (₹) *</label>
                   <input
                     required
                     type="number"
+                    min="0"
                     step="0.01"
                     value={formData.price}
                     onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                    placeholder="0.00"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-emerald-400 font-bold font-mono focus:outline-none focus:border-emerald-500 text-sm"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500 font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 mb-1">GST Tax (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={formData.percent}
+                    onChange={(e) => setFormData({ ...formData, percent: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-800 flex justify-end gap-2">
+              <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-800 text-slate-300 hover:bg-slate-800 text-xs font-semibold"
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold"
                 >
-                  Close
+                  Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
+                  className="px-4 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
                 >
-                  {editingProduct ? "Update Product" : "Add to Stock"}
+                  {editingProduct ? "Save Changes" : "Insert Stock"}
                 </button>
               </div>
             </form>

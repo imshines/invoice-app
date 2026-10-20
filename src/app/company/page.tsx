@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle, Building, Save } from "lucide-react";
+import { ArrowLeft, CheckCircle, Building, Save, ShieldAlert } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 
 export default function CompanyPage() {
+  const { user, isAdmin, loading } = useAuth();
   const [saved, setSaved] = useState(false);
   const [form, setForm] = useState({
     company: "",
@@ -69,10 +71,35 @@ export default function CompanyPage() {
       if (res.ok) {
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to save company settings");
       }
     } catch (err) {
       console.error("Failed to save company:", err);
     }
+  }
+
+  if (!loading && !isAdmin) {
+    return (
+      <div className="min-h-[50vh] flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center space-y-4 shadow-2xl">
+          <div className="w-12 h-12 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-2xl mx-auto flex items-center justify-center">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-bold text-white">Administrator Access Required</h2>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            You are currently logged in as <span className="text-white font-semibold">{user?.fullName || "Cashier"}</span> ({user?.role}). Only Organization Administrators have permission to modify company settings, GST details, and billing profiles.
+          </p>
+          <Link
+            href="/generatebill"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs"
+          >
+            <span>Return to Billing POS</span>
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -88,142 +115,137 @@ export default function CompanyPage() {
       </div>
 
       {saved && (
-        <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-xl text-xs font-semibold flex items-center gap-2">
+        <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs rounded-xl flex items-center gap-2 font-medium">
           <CheckCircle className="w-4 h-4" />
-          <span>Company profile updated! Navbar logo and print headers refreshed.</span>
+          <span>Company profile updated successfully!</span>
         </div>
       )}
 
-      {/* Form Card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-800 flex items-center gap-2">
+      <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5 text-xs">
+        <div className="flex items-center gap-2 pb-4 border-b border-slate-800">
           <Building className="w-5 h-5 text-emerald-400" />
-          <h2 className="font-bold text-base text-white">Company Profile & Branding</h2>
+          <div>
+            <h1 className="text-lg font-bold text-white">Company Profile & GST Configuration</h1>
+            <p className="text-[11px] text-slate-400">Manage business identity, GSTIN, and print headers</p>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="p-6 space-y-4 text-xs">
-            <div className="grid grid-cols-1 gap-4">
-              {/* Company / Brand Name */}
-              <div>
-                <label className="block text-slate-400 font-semibold mb-1">Company / Brand Name *</label>
-                <input
-                  required
-                  type="text"
-                  value={form.company}
-                  onChange={(e) => setForm({ ...form, company: e.target.value })}
-                  placeholder="e.g. Sri Hari Traders"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white font-bold focus:outline-none focus:border-emerald-500"
-                />
-              </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-slate-400 font-semibold mb-1">Company / Trade Name *</label>
+            <input
+              required
+              type="text"
+              value={form.company}
+              onChange={(e) => setForm({ ...form, company: e.target.value })}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
+            />
+          </div>
 
-              {/* GSTIN Number */}
-              <div>
-                <label className="block text-slate-400 font-semibold mb-1">GSTIN Number</label>
-                <input
-                  type="text"
-                  value={form.tin}
-                  onChange={(e) => setForm({ ...form, tin: e.target.value })}
-                  placeholder="33AAAAA0000A1Z5"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white font-mono uppercase focus:outline-none focus:border-emerald-500"
-                />
-              </div>
+          <div>
+            <label className="block text-slate-400 font-semibold mb-1">GSTIN / Tax ID</label>
+            <input
+              type="text"
+              value={form.tin}
+              onChange={(e) => setForm({ ...form, tin: e.target.value })}
+              placeholder="33AAAAA0000A1Z5"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs font-mono focus:outline-none focus:border-emerald-500"
+            />
+          </div>
 
-              {/* Mobile 1 & Mobile 2 */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-400 font-semibold mb-1">
-                    Mobile Number-1 *
-                  </label>
-                  <input
-                    required
-                    type="text"
-                    value={form.mob1}
-                    onChange={(e) => setForm({ ...form, mob1: e.target.value })}
-                    placeholder="9876543210"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-400 font-semibold mb-1">
-                    Mobile Number-2
-                  </label>
-                  <input
-                    type="text"
-                    value={form.mob2}
-                    onChange={(e) => setForm({ ...form, mob2: e.target.value })}
-                    placeholder="Secondary contact"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
+          <div>
+            <label className="block text-slate-400 font-semibold mb-1">Primary Mobile Phone *</label>
+            <input
+              required
+              type="text"
+              value={form.mob1}
+              onChange={(e) => setForm({ ...form, mob1: e.target.value })}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs font-mono focus:outline-none focus:border-emerald-500"
+            />
+          </div>
 
-              {/* Address */}
-              <div>
-                <label className="block text-slate-400 font-semibold mb-1">Address *</label>
-                <input
-                  required
-                  type="text"
-                  value={form.addr}
-                  onChange={(e) => setForm({ ...form, addr: e.target.value })}
-                  placeholder="Street Address, Area"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
-                />
-              </div>
+          <div>
+            <label className="block text-slate-400 font-semibold mb-1">Secondary Contact</label>
+            <input
+              type="text"
+              value={form.mob2}
+              onChange={(e) => setForm({ ...form, mob2: e.target.value })}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs font-mono focus:outline-none focus:border-emerald-500"
+            />
+          </div>
 
-              {/* City & Postal Code */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-400 font-semibold mb-1">City *</label>
-                  <input
-                    required
-                    type="text"
-                    value={form.city}
-                    onChange={(e) => setForm({ ...form, city: e.target.value })}
-                    placeholder="City"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-400 font-semibold mb-1">Postal Code *</label>
-                  <input
-                    required
-                    type="text"
-                    value={form.pin}
-                    onChange={(e) => setForm({ ...form, pin: e.target.value })}
-                    placeholder="PIN Code"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
+          <div className="md:col-span-2">
+            <label className="block text-slate-400 font-semibold mb-1">Street Address</label>
+            <input
+              type="text"
+              value={form.addr}
+              onChange={(e) => setForm({ ...form, addr: e.target.value })}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
+            />
+          </div>
 
-              {/* Dynamic UPI VPA */}
-              <div>
-                <label className="block text-slate-400 font-semibold mb-1">
-                  UPI VPA (Payee Address for Dynamic Bill Payment QR)
-                </label>
-                <input
-                  type="text"
-                  value={form.upiVpa}
-                  onChange={(e) => setForm({ ...form, upiVpa: e.target.value })}
-                  placeholder="e.g. merchant@okaxis"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-emerald-400 font-mono font-bold focus:outline-none focus:border-emerald-500"
-                />
-              </div>
+          <div>
+            <label className="block text-slate-400 font-semibold mb-1">City</label>
+            <input
+              type="text"
+              value={form.city}
+              onChange={(e) => setForm({ ...form, city: e.target.value })}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-400 font-semibold mb-1">PIN / Postal Code</label>
+            <input
+              type="text"
+              value={form.pin}
+              onChange={(e) => setForm({ ...form, pin: e.target.value })}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs font-mono focus:outline-none focus:border-emerald-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-400 font-semibold mb-1">UPI VPA (for Instant QR Payment)</label>
+            <input
+              type="text"
+              value={form.upiVpa}
+              onChange={(e) => setForm({ ...form, upiVpa: e.target.value })}
+              placeholder="srihari@oksbi"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs font-mono focus:outline-none focus:border-emerald-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-400 font-semibold mb-1">State & State Code</label>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="text"
+                value={form.state}
+                onChange={(e) => setForm({ ...form, state: e.target.value })}
+                placeholder="Tamil Nadu"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
+              />
+              <input
+                type="text"
+                value={form.stateCode}
+                onChange={(e) => setForm({ ...form, stateCode: e.target.value })}
+                placeholder="33"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs font-mono focus:outline-none focus:border-emerald-500"
+              />
             </div>
           </div>
+        </div>
 
-          <div className="px-6 py-3 bg-slate-950/60 border-t border-slate-800 text-right">
-            <button
-              type="submit"
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition-all ml-auto"
-            >
-              <Save className="w-4 h-4" />
-              <span>Save Company Profile</span>
-            </button>
-          </div>
-        </form>
-      </div>
+        <div className="pt-4 border-t border-slate-800 flex justify-end">
+          <button
+            type="submit"
+            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>Save Profile</span>
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

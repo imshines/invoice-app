@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   Boxes,
   User,
@@ -16,47 +16,18 @@ import {
   Receipt,
   Zap,
   LogIn,
+  ShieldAlert,
+  ShieldCheck,
+  UserCheck,
 } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 
 export function Navbar() {
   const pathname = usePathname();
-  const router = useRouter();
+  const { user, organization, isAdmin, isCashier, logout } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [companyName, setCompanyName] = useState<string>("Invoice Application");
-  const [currentUser, setCurrentUser] = useState<any>(null);
 
-  useEffect(() => {
-    async function initNav() {
-      try {
-        const [orgRes, authRes] = await Promise.all([
-          fetch("/api/organization/current").then((r) => r.json()),
-          fetch("/api/auth/me").then((r) => r.json()),
-        ]);
-
-        if (orgRes && (orgRes.tradeName || orgRes.legalName)) {
-          setCompanyName(orgRes.tradeName || orgRes.legalName);
-        }
-
-        if (authRes && authRes.user) {
-          setCurrentUser(authRes.user);
-        }
-      } catch (err) {
-        // Fallback
-      }
-    }
-    initNav();
-  }, [pathname]);
-
-  async function handleLogout() {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      setCurrentUser(null);
-      router.push("/login");
-      router.refresh();
-    } catch (err) {
-      console.error("Logout failed:", err);
-    }
-  }
+  const companyName = organization?.tradeName || organization?.legalName || "Invoice Application";
 
   const navLinks = [
     { href: "/generatebill", label: "Generate Bill", icon: Zap, highlight: true },
@@ -128,21 +99,37 @@ export function Navbar() {
                 </button>
 
                 {dropdownOpen && (
-                  <div className="absolute left-0 mt-2 w-48 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl py-1 z-50">
+                  <div className="absolute left-0 mt-2 w-52 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl py-1 z-50">
                     <Link
                       href="/company"
-                      className="flex items-center gap-2 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 hover:text-white"
+                      className="flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 hover:text-white"
                     >
-                      <Building className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Company Profile</span>
+                      <div className="flex items-center gap-2">
+                        <Building className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Company Profile</span>
+                      </div>
+                      {!isAdmin && (
+                        <span className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">
+                          Admin
+                        </span>
+                      )}
                     </Link>
+
                     <Link
                       href="/users"
-                      className="flex items-center gap-2 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 hover:text-white"
+                      className="flex items-center justify-between px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 hover:text-white"
                     >
-                      <Users className="w-3.5 h-3.5 text-slate-400" />
-                      <span>User Accounts</span>
+                      <div className="flex items-center gap-2">
+                        <Users className="w-3.5 h-3.5 text-slate-400" />
+                        <span>User Accounts</span>
+                      </div>
+                      {!isAdmin && (
+                        <span className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">
+                          Admin
+                        </span>
+                      )}
                     </Link>
+
                     <div className="border-t border-slate-800 my-1" />
                     <Link
                       href="/"
@@ -159,19 +146,29 @@ export function Navbar() {
 
           {/* Right User Profile & Auth */}
           <div className="flex items-center gap-3">
-            {currentUser ? (
+            {user ? (
               <div className="flex items-center gap-3">
                 <div className="hidden sm:block text-right">
-                  <div className="text-xs font-bold text-white leading-tight">
-                    {currentUser.fullName}
+                  <div className="text-xs font-bold text-white leading-tight flex items-center justify-end gap-1.5">
+                    {isAdmin ? (
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 inline" />
+                    ) : (
+                      <UserCheck className="w-3.5 h-3.5 text-blue-400 inline" />
+                    )}
+                    <span>{user.fullName}</span>
                   </div>
-                  <div className="text-[10px] font-semibold text-emerald-400 font-mono">
-                    {currentUser.role}
+                  <div className="text-[10px] font-semibold font-mono">
+                    {isAdmin ? (
+                      <span className="text-emerald-400">Admin Privileges</span>
+                    ) : (
+                      <span className="text-blue-400">Cashier Staff</span>
+                    )}
                   </div>
                 </div>
+
                 <button
                   type="button"
-                  onClick={handleLogout}
+                  onClick={logout}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-300 text-xs font-semibold border border-slate-700/60 transition-colors"
                   title="Sign Out"
                 >

@@ -4,8 +4,10 @@ import { z } from "zod";
 import { db } from "../db";
 import { organizations } from "../db/schema";
 import { eq } from "drizzle-orm";
+import { requireAuth, requireRole } from "../auth";
 
 export const organizationsRoute = new Hono()
+  // Any logged-in user can view organization profile info
   .get("/current", async (c) => {
     const [org] = await db.select().from(organizations).limit(1);
     if (!org) {
@@ -22,8 +24,10 @@ export const organizationsRoute = new Hono()
     }
     return c.json(org);
   })
+  // Only Admin can update company profile, tax info, and thermal headers
   .post(
     "/current",
+    requireRole("ORG_ADMIN", "SUPERADMIN"),
     zValidator(
       "json",
       z.object({
@@ -61,6 +65,8 @@ export const organizationsRoute = new Hono()
       const upiVpa = body.upiVpa || null;
       const state = body.state || "";
       const stateCode = body.stateCode || "33";
+      const thermalHeader = body.thermalHeader;
+      const thermalFooter = body.thermalFooter;
 
       const [existing] = await db.select().from(organizations).limit(1);
 
@@ -79,6 +85,8 @@ export const organizationsRoute = new Hono()
             upiVpa,
             state,
             stateCode,
+            thermalHeader: thermalHeader !== undefined ? thermalHeader : existing.thermalHeader,
+            thermalFooter: thermalFooter !== undefined ? thermalFooter : existing.thermalFooter,
             updatedAt: new Date(),
           })
           .where(eq(organizations.id, existing.id))
@@ -99,6 +107,8 @@ export const organizationsRoute = new Hono()
             upiVpa,
             state,
             stateCode,
+            thermalHeader,
+            thermalFooter,
           })
           .returning();
         return c.json(created, 201);

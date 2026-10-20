@@ -4,9 +4,10 @@ import { z } from "zod";
 import { db } from "../db";
 import { customers, invoices, payments, organizations } from "../db/schema";
 import { eq, ilike, or, desc } from "drizzle-orm";
+import { requireAuth, requireRole } from "../auth";
 
 export const customersRoute = new Hono()
-  .get("/", async (c) => {
+  .get("/", requireAuth, async (c) => {
     const q = c.req.query("q");
     let query = db.select().from(customers);
 
@@ -27,8 +28,9 @@ export const customersRoute = new Hono()
     const list = await query.orderBy(desc(customers.updatedAt));
     return c.json(list);
   })
-  .get("/:id", async (c) => {
+  .get("/:id", requireAuth, async (c) => {
     const id = c.req.param("id");
+    if (!id) return c.json({ error: "Missing ID" }, 400);
     const [customer] = await db.select().from(customers).where(eq(customers.id, id)).limit(1);
     if (!customer) {
       return c.json({ error: "Customer not found" }, 404);
@@ -56,6 +58,7 @@ export const customersRoute = new Hono()
   })
   .post(
     "/",
+    requireAuth,
     zValidator(
       "json",
       z.object({
@@ -103,6 +106,7 @@ export const customersRoute = new Hono()
   )
   .put(
     "/:id",
+    requireAuth,
     zValidator(
       "json",
       z.object({
@@ -119,6 +123,7 @@ export const customersRoute = new Hono()
     ),
     async (c) => {
       const id = c.req.param("id");
+      if (!id) return c.json({ error: "Missing ID" }, 400);
       const body = c.req.valid("json");
 
       const [updated] = await db
@@ -133,8 +138,9 @@ export const customersRoute = new Hono()
       return c.json(updated);
     }
   )
-  .delete("/:id", async (c) => {
+  .delete("/:id", requireRole("ORG_ADMIN", "SUPERADMIN"), async (c) => {
     const id = c.req.param("id");
+    if (!id) return c.json({ error: "Missing ID" }, 400);
     await db.delete(customers).where(eq(customers.id, id));
     return c.json({ success: true });
   });

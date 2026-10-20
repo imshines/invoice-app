@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Navbar } from "@/components/navbar";
+import { AuthProvider } from "@/lib/auth-context";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,12 +17,14 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-slate-950 text-slate-100 antialiased selection:bg-emerald-500 selection:text-white font-sans">
-        <Suspense fallback={<div className="h-16 bg-slate-900 border-b border-slate-800" />}>
-          <Navbar />
+        <Suspense fallback={<div className="min-h-screen bg-slate-950" />}>
+          <AuthProvider>
+            <Navbar />
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+              {children}
+            </main>
+          </AuthProvider>
         </Suspense>
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {children}
-        </main>
       </body>
     </html>
   );

@@ -1,16 +1,21 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Lock, Mail, ArrowRight, ShieldCheck, UserCheck, AlertCircle } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { refreshAuth } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const redirectTarget = searchParams.get("redirect") || "/generatebill";
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -29,7 +34,8 @@ export default function LoginPage() {
         throw new Error(data.error || "Login failed");
       }
 
-      router.push("/");
+      await refreshAuth();
+      router.push(redirectTarget);
       router.refresh();
     } catch (err: any) {
       setError(err.message || "Failed to sign in");
@@ -77,7 +83,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@srihari.com"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono"
               />
               <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
             </div>
@@ -92,7 +98,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono"
               />
               <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
             </div>
@@ -115,7 +121,7 @@ export default function LoginPage() {
         {/* 1-Click Demo Accounts */}
         <div className="pt-4 border-t border-slate-800/80 space-y-2">
           <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider text-center">
-            Quick 1-Click Demo Logins
+            Quick 1-Click Demo Credentials
           </div>
           <div className="grid grid-cols-2 gap-2">
             <button
@@ -128,6 +134,7 @@ export default function LoginPage() {
                 <span>Admin User</span>
               </div>
               <div className="text-[10px] text-slate-400 font-mono mt-0.5">admin@srihari.com</div>
+              <div className="text-[9px] text-slate-500 font-mono">Full Access</div>
             </button>
             <button
               type="button"
@@ -139,10 +146,19 @@ export default function LoginPage() {
                 <span>Cashier Staff</span>
               </div>
               <div className="text-[10px] text-slate-400 font-mono mt-0.5">cashier@srihari.com</div>
+              <div className="text-[9px] text-slate-500 font-mono">Billing Only</div>
             </button>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-[80vh] flex items-center justify-center text-slate-500 text-xs">Loading login...</div>}>
+      <LoginForm />
+    </Suspense>
   );
 }

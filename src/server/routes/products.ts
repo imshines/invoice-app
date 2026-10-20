@@ -4,9 +4,10 @@ import { z } from "zod";
 import { db } from "../db";
 import { products, stockMovements, organizations } from "../db/schema";
 import { eq, ilike, or, desc } from "drizzle-orm";
+import { requireAuth, requireRole } from "../auth";
 
 export const productsRoute = new Hono()
-  .get("/", async (c) => {
+  .get("/", requireAuth, async (c) => {
     const q = c.req.query("q");
     const barcode = c.req.query("barcode");
 
@@ -32,8 +33,9 @@ export const productsRoute = new Hono()
     const list = await query.orderBy(desc(products.updatedAt));
     return c.json(list);
   })
-  .get("/:id", async (c) => {
+  .get("/:id", requireAuth, async (c) => {
     const id = c.req.param("id");
+    if (!id) return c.json({ error: "Missing ID" }, 400);
     const [prod] = await db.select().from(products).where(eq(products.id, id)).limit(1);
     if (!prod) {
       return c.json({ error: "Product not found" }, 404);
@@ -50,10 +52,11 @@ export const productsRoute = new Hono()
   })
   .post(
     "/",
+    requireRole("ORG_ADMIN", "SUPERADMIN", "INVENTORY_MANAGER"),
     zValidator(
       "json",
       z.object({
-        sku: z.string().optional(), // ID from legacy stock.php
+        sku: z.string().optional(),
         name: z.string().min(1, "Product name is required"),
         unitOfMeasure: z.string().min(1, "Unit of measure is required"),
         currentStock: z.string().default("0"),
@@ -103,6 +106,7 @@ export const productsRoute = new Hono()
   )
   .put(
     "/:id",
+    requireRole("ORG_ADMIN", "SUPERADMIN", "INVENTORY_MANAGER"),
     zValidator(
       "json",
       z.object({
@@ -119,6 +123,7 @@ export const productsRoute = new Hono()
     ),
     async (c) => {
       const id = c.req.param("id");
+      if (!id) return c.json({ error: "Missing ID" }, 400);
       const body = c.req.valid("json");
 
       const [updated] = await db
@@ -133,13 +138,15 @@ export const productsRoute = new Hono()
       return c.json(updated);
     }
   )
-  .delete("/:id", async (c) => {
+  .delete("/:id", requireRole("ORG_ADMIN", "SUPERADMIN"), async (c) => {
     const id = c.req.param("id");
+    if (!id) return c.json({ error: "Missing ID" }, 400);
     await db.delete(products).where(eq(products.id, id));
     return c.json({ success: true });
   })
   .post(
     "/:id/adjust-stock",
+    requireRole("ORG_ADMIN", "SUPERADMIN", "INVENTORY_MANAGER"),
     zValidator(
       "json",
       z.object({
@@ -150,6 +157,7 @@ export const productsRoute = new Hono()
     ),
     async (c) => {
       const id = c.req.param("id");
+      if (!id) return c.json({ error: "Missing ID" }, 400);
       const { delta, reason, notes } = c.req.valid("json");
 
       const [prod] = await db.select().from(products).where(eq(products.id, id)).limit(1);
@@ -159,7 +167,7 @@ export const productsRoute = new Hono()
 
       const newBalance = Number(prod.currentStock) + delta;
       if (newBalance < 0) {
-        return c.json({ error: "Insufficient stock balance" }, 400);
+        return c.json({ error: "Insufficient stock balance: stock cannot be negative" }, 400);
       }
 
       const [updated] = await db

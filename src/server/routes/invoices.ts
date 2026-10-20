@@ -14,9 +14,10 @@ import {
 import { eq, desc, sql, ilike, or } from "drizzle-orm";
 import { calculateInvoiceTaxes } from "../services/tax-calculator";
 import { generateDynamicUpiQr } from "../services/upi-generator";
+import { requireAuth } from "../auth";
 
 export const invoicesRoute = new Hono()
-  .get("/", async (c) => {
+  .get("/", requireAuth, async (c) => {
     const q = c.req.query("q");
     const status = c.req.query("status");
 
@@ -40,8 +41,9 @@ export const invoicesRoute = new Hono()
     const list = await query.orderBy(desc(invoices.createdAt)).limit(100);
     return c.json(list);
   })
-  .get("/:id", async (c) => {
+  .get("/:id", requireAuth, async (c) => {
     const id = c.req.param("id");
+    if (!id) return c.json({ error: "Missing ID" }, 400);
 
     const [inv] = await db.select().from(invoices).where(eq(invoices.id, id)).limit(1);
     if (!inv) {
@@ -77,6 +79,7 @@ export const invoicesRoute = new Hono()
   })
   .post(
     "/",
+    requireAuth,
     zValidator(
       "json",
       z.object({
@@ -84,7 +87,9 @@ export const invoicesRoute = new Hono()
         customerName: z.string().optional(),
         customerPhone: z.string().optional(),
         customerArea: z.string().optional(),
-        invoiceType: z.enum(["TAX_INVOICE", "RETAIL_BILL", "PROFORMA", "QUOTATION"]).default("TAX_INVOICE"),
+        invoiceType: z
+          .enum(["TAX_INVOICE", "RETAIL_BILL", "PROFORMA", "QUOTATION"])
+          .default("TAX_INVOICE"),
         items: z
           .array(
             z.object({
@@ -92,7 +97,7 @@ export const invoicesRoute = new Hono()
               name: z.string().optional(),
               unitOfMeasure: z.string().optional(),
               taxPercent: z.number().optional(),
-              quantity: z.number().positive(),
+              quantity: z.number().positive("Quantity must be greater than zero"),
               unitPrice: z.number().nonnegative(),
               discountPercent: z.number().min(0).max(100).default(0),
             })
@@ -129,7 +134,11 @@ export const invoicesRoute = new Hono()
       }
 
       if (!cust && customerPhone && customerPhone.trim().length > 3) {
-        [cust] = await db.select().from(customers).where(eq(customers.phone, customerPhone.trim())).limit(1);
+        [cust] = await db
+          .select()
+          .from(customers)
+          .where(eq(customers.phone, customerPhone.trim()))
+          .limit(1);
       }
 
       if (!cust) {
@@ -153,7 +162,7 @@ export const invoicesRoute = new Hono()
           .returning();
       }
 
-      // 3. Process products and check or auto-create items
+      // 3. Process products and check or auto-create items + STRICT INVENTORY VALIDATION
       const resolvedItems: Array<{
         product: any;
         quantity: number;
@@ -179,9 +188,28 @@ export const invoicesRoute = new Hono()
               purchasePrice: (item.unitPrice * 0.8).toFixed(2),
               sellingPrice: item.unitPrice.toFixed(2),
               taxPercent: (item.taxPercent || 0).toFixed(2),
-              currentStock: "1000.00", // virtual stock for ad-hoc items
+              currentStock: "1000.00", // virtual stock for ad-hoc custom items
             })
             .returning();
+        } else {
+          // Pre-validation: Product exists in catalog -> Verify Available Stock
+          const availableStock = Number(prod.currentStock);
+          if (availableStock <= 0) {
+            return c.json(
+              {
+                error: `Product '${prod.name}' is out of stock (Available: 0 ${prod.unitOfMeasure}).`,
+              },
+              400
+            );
+          }
+          if (item.quantity > availableStock) {
+            return c.json(
+              {
+                error: `Insufficient stock for product '${prod.name}'. Requested ${item.quantity} ${prod.unitOfMeasure}, but only ${availableStock} ${prod.unitOfMeasure} available in inventory.`,
+              },
+              400
+            );
+          }
         }
 
         resolvedItems.push({
@@ -241,129 +269,152 @@ export const invoicesRoute = new Hono()
         upiPaymentUrl = upi.upiUrl;
       }
 
-      // 5. Execute Atomic Database Transaction
-      const result = await db.transaction(async (tx) => {
-        // A. Insert Invoice
-        const [inv] = await tx
-          .insert(invoices)
-          .values({
-            organizationId: org.id,
-            customerId: cust.id,
-            invoiceType,
-            invoiceNumber,
-            invoiceDate: new Date().toISOString().split("T")[0],
-            status,
-            customerSnapshot: cust,
-            sellerSnapshot: org,
-            subtotal: taxResult.subtotal.toFixed(2),
-            discountAmount: taxResult.itemDiscountTotal.toFixed(2),
-            taxableAmount: taxResult.taxableAmount.toFixed(2),
-            cgstAmount: taxResult.cgstAmount.toFixed(2),
-            sgstAmount: taxResult.sgstAmount.toFixed(2),
-            igstAmount: taxResult.igstAmount.toFixed(2),
-            totalTaxAmount: taxResult.totalTaxAmount.toFixed(2),
-            roundOff: taxResult.roundOff.toFixed(2),
-            grandTotal: taxResult.grandTotal.toFixed(2),
-            paidAmount: actualPaid.toFixed(2),
-            balanceAmount: balanceAmount.toFixed(2),
-            upiPaymentUrl,
-            notes,
-          })
-          .returning();
-
-        // B. Insert Line Items & Deduct Stock
-        for (const item of taxResult.items) {
-          await tx.insert(invoiceItems).values({
-            invoiceId: inv.id,
-            productId: item.productId,
-            itemName: item.itemName,
-            hsnSac: item.hsnSac,
-            unitOfMeasure: item.unitOfMeasure,
-            quantity: item.quantity.toFixed(2),
-            unitCost: item.unitCost.toFixed(2),
-            unitPrice: item.unitPrice.toFixed(2),
-            discountPercent: item.discountPercent.toFixed(2),
-            discountAmount: item.discountAmount.toFixed(2),
-            taxableValue: item.taxableValue.toFixed(2),
-            taxPercent: item.taxPercent.toFixed(2),
-            cgstRate: item.cgstRate.toFixed(2),
-            cgstAmount: item.cgstAmount.toFixed(2),
-            sgstRate: item.sgstRate.toFixed(2),
-            sgstAmount: item.sgstAmount.toFixed(2),
-            igstRate: item.igstRate.toFixed(2),
-            igstAmount: item.igstAmount.toFixed(2),
-            totalAmount: item.totalAmount.toFixed(2),
-          });
-
-          // Stock deduction
-          const [currentProd] = await tx
-            .select()
-            .from(products)
-            .where(eq(products.id, item.productId))
-            .limit(1);
-
-          if (currentProd) {
-            const updatedStock = Number(currentProd.currentStock) - item.quantity;
-            await tx
-              .update(products)
-              .set({
-                currentStock: updatedStock.toFixed(2),
-                updatedAt: new Date(),
-              })
-              .where(eq(products.id, item.productId));
-
-            // Log Stock Movement
-            await tx.insert(stockMovements).values({
+      // 5. Execute Atomic Database Transaction with Row-Level Locks
+      try {
+        const result = await db.transaction(async (tx) => {
+          // A. Insert Invoice
+          const [inv] = await tx
+            .insert(invoices)
+            .values({
               organizationId: org.id,
+              customerId: cust.id,
+              invoiceType,
+              invoiceNumber,
+              invoiceDate: new Date().toISOString().split("T")[0],
+              status,
+              customerSnapshot: cust,
+              sellerSnapshot: org,
+              subtotal: taxResult.subtotal.toFixed(2),
+              discountAmount: taxResult.itemDiscountTotal.toFixed(2),
+              taxableAmount: taxResult.taxableAmount.toFixed(2),
+              cgstAmount: taxResult.cgstAmount.toFixed(2),
+              sgstAmount: taxResult.sgstAmount.toFixed(2),
+              igstAmount: taxResult.igstAmount.toFixed(2),
+              totalTaxAmount: taxResult.totalTaxAmount.toFixed(2),
+              roundOff: taxResult.roundOff.toFixed(2),
+              grandTotal: taxResult.grandTotal.toFixed(2),
+              paidAmount: actualPaid.toFixed(2),
+              balanceAmount: balanceAmount.toFixed(2),
+              upiPaymentUrl,
+              notes,
+            })
+            .returning();
+
+          // B. Insert Line Items & Deduct Stock Atomically
+          for (const item of taxResult.items) {
+            await tx.insert(invoiceItems).values({
+              invoiceId: inv.id,
               productId: item.productId,
-              movementType: "SALE_INVOICE",
-              referenceId: inv.id,
-              quantityDelta: (-item.quantity).toFixed(2),
+              itemName: item.itemName,
+              hsnSac: item.hsnSac,
+              unitOfMeasure: item.unitOfMeasure,
+              quantity: item.quantity.toFixed(2),
               unitCost: item.unitCost.toFixed(2),
-              balanceAfterMovement: updatedStock.toFixed(2),
-              notes: `Sale invoice ${invoiceNumber}`,
+              unitPrice: item.unitPrice.toFixed(2),
+              discountPercent: item.discountPercent.toFixed(2),
+              discountAmount: item.discountAmount.toFixed(2),
+              taxableValue: item.taxableValue.toFixed(2),
+              taxPercent: item.taxPercent.toFixed(2),
+              cgstRate: item.cgstRate.toFixed(2),
+              cgstAmount: item.cgstAmount.toFixed(2),
+              sgstRate: item.sgstRate.toFixed(2),
+              sgstAmount: item.sgstAmount.toFixed(2),
+              igstRate: item.igstRate.toFixed(2),
+              igstAmount: item.igstAmount.toFixed(2),
+              totalAmount: item.totalAmount.toFixed(2),
+            });
+
+            // Stock deduction with PostgreSQL Row-Level Lock (FOR UPDATE)
+            const [currentProd] = await tx
+              .select()
+              .from(products)
+              .where(eq(products.id, item.productId))
+              .for("update")
+              .limit(1);
+
+            if (currentProd) {
+              const currentStockNum = Number(currentProd.currentStock);
+              if (item.quantity > currentStockNum) {
+                throw new Error(
+                  `Insufficient stock for product '${currentProd.name}'. Requested ${item.quantity}, but only ${currentStockNum} available in inventory.`
+                );
+              }
+
+              const updatedStock = currentStockNum - item.quantity;
+              if (updatedStock < 0) {
+                throw new Error(
+                  `Negative inventory violation: Stock for '${currentProd.name}' cannot be less than zero.`
+                );
+              }
+
+              await tx
+                .update(products)
+                .set({
+                  currentStock: updatedStock.toFixed(2),
+                  updatedAt: new Date(),
+                })
+                .where(eq(products.id, item.productId));
+
+              // Log Stock Movement
+              await tx.insert(stockMovements).values({
+                organizationId: org.id,
+                productId: item.productId,
+                movementType: "SALE_INVOICE",
+                referenceId: inv.id,
+                quantityDelta: (-item.quantity).toFixed(2),
+                unitCost: item.unitCost.toFixed(2),
+                balanceAfterMovement: updatedStock.toFixed(2),
+                notes: `Sale invoice ${invoiceNumber}`,
+              });
+            }
+          }
+
+          // C. Record Payment if paid > 0
+          if (actualPaid > 0) {
+            await tx.insert(payments).values({
+              organizationId: org.id,
+              invoiceId: inv.id,
+              customerId: cust.id,
+              paymentNumber: `PAY-${invoiceNumber}`,
+              paymentDate: new Date().toISOString().split("T")[0],
+              amount: actualPaid.toFixed(2),
+              paymentMode,
+              notes: `Payment for invoice ${invoiceNumber}`,
             });
           }
-        }
 
-        // C. Record Payment if paid > 0
-        if (actualPaid > 0) {
-          await tx.insert(payments).values({
-            organizationId: org.id,
-            invoiceId: inv.id,
-            customerId: cust.id,
-            paymentNumber: `PAY-${invoiceNumber}`,
-            paymentDate: new Date().toISOString().split("T")[0],
-            amount: actualPaid.toFixed(2),
-            paymentMode,
-            notes: `Payment for invoice ${invoiceNumber}`,
-          });
-        }
+          // D. Update Customer Khata Balance
+          if (balanceAmount > 0) {
+            const newCustomerBalance = Number(cust.currentBalance || 0) + balanceAmount;
+            await tx
+              .update(customers)
+              .set({
+                currentBalance: newCustomerBalance.toFixed(2),
+                updatedAt: new Date(),
+              })
+              .where(eq(customers.id, cust.id));
+          }
 
-        // D. Update Customer Khata Balance
-        if (balanceAmount > 0) {
-          const newCustomerBalance = Number(cust.currentBalance || 0) + balanceAmount;
+          // E. Increment Organization Invoice Sequence
           await tx
-            .update(customers)
+            .update(organizations)
             .set({
-              currentBalance: newCustomerBalance.toFixed(2),
+              nextInvoiceNumber: nextNum + 1,
               updatedAt: new Date(),
             })
-            .where(eq(customers.id, cust.id));
-        }
+            .where(eq(organizations.id, org.id));
 
-        // E. Increment Organization Invoice Sequence
-        await tx
-          .update(organizations)
-          .set({
-            nextInvoiceNumber: nextNum + 1,
-            updatedAt: new Date(),
-          })
-          .where(eq(organizations.id, org.id));
+          return {
+            invoice: inv,
+            taxResult,
+            customer: cust,
+            upiUrl: upiPaymentUrl,
+          };
+        });
 
-        return inv;
-      });
-
-      return c.json(result, 201);
+        return c.json(result, 201);
+      } catch (err: any) {
+        return c.json({ error: err.message || "Failed to process invoice transaction" }, 400);
+      }
     }
   );

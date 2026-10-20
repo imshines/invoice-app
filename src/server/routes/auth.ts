@@ -5,7 +5,8 @@ import { db } from "../db";
 import { users, organizations } from "../db/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { getCookie, setCookie, deleteCookie } from "hono/cookie";
+import { setCookie, deleteCookie } from "hono/cookie";
+import { getSessionUser } from "../auth";
 
 export const authRoute = new Hono()
   .post(
@@ -20,9 +21,18 @@ export const authRoute = new Hono()
     async (c) => {
       const { email, password } = c.req.valid("json");
 
-      const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, email.toLowerCase().trim()))
+        .limit(1);
+
       if (!user) {
         return c.json({ error: "Invalid email or password" }, 401);
+      }
+
+      if (!user.isActive) {
+        return c.json({ error: "This user account is deactivated. Contact your administrator." }, 403);
       }
 
       const isValid = await bcrypt.compare(password, user.passwordHash);
@@ -36,7 +46,7 @@ export const authRoute = new Hono()
         .where(eq(organizations.id, user.organizationId!))
         .limit(1);
 
-      // Set cookie session
+      // Set user session cookie (HTTP-only, secure, 7 days duration)
       setCookie(c, "user_session", user.id, {
         path: "/",
         httpOnly: true,
@@ -51,23 +61,12 @@ export const authRoute = new Hono()
           fullName: user.fullName,
           role: user.role,
         },
-        organization: org,
+        organization: org || null,
       });
     }
   )
   .get("/me", async (c) => {
-    const sessionUserId = getCookie(c, "user_session");
-
-    let user;
-    if (sessionUserId) {
-      [user] = await db.select().from(users).where(eq(users.id, sessionUserId)).limit(1);
-    }
-
-    // Default to the first admin user in database if no session cookie
-    if (!user) {
-      [user] = await db.select().from(users).limit(1);
-    }
-
+    const user = await getSessionUser(c);
     const [org] = await db.select().from(organizations).limit(1);
 
     if (!user) {
@@ -81,10 +80,10 @@ export const authRoute = new Hono()
         fullName: user.fullName,
         role: user.role,
       },
-      organization: org,
+      organization: org || null,
     });
   })
   .post("/logout", async (c) => {
     deleteCookie(c, "user_session", { path: "/" });
-    return c.json({ success: true });
+    return c.json({ success: true, message: "Logged out successfully" });
   });

@@ -19,6 +19,7 @@ import {
   PackagePlus,
   CreditCard,
   FileText,
+  AlertTriangle,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 
@@ -114,15 +115,30 @@ export default function GenerateBillPage() {
     setShowCustomerDropdown(false);
   }
 
-  // Quick Add Product to Bill (Effortless 1-click!)
+  // Quick Add Product to Bill (STRICT Inventory Enforcement)
   function addProductToBill(prod: Product) {
+    const maxStock = parseFloat(prod.currentStock) || 0;
+    if (maxStock <= 0) {
+      setErrorMessage(`Product "${prod.name}" is OUT OF STOCK (0 ${prod.unitOfMeasure} available).`);
+      return;
+    }
+
     setRows((prev) => {
       const existingIdx = prev.findIndex((r) => r.productId === prod.id);
       if (existingIdx !== -1) {
-        // Increment quantity
+        const currentQty = prev[existingIdx].qty;
+        if (currentQty >= maxStock) {
+          setErrorMessage(
+            `Stock limit reached: Only ${maxStock} ${prod.unitOfMeasure} available in inventory for "${prod.name}". You cannot add more.`
+          );
+          return prev;
+        }
+
+        // Increment safely clamped to available stock
+        const newQty = Math.min(currentQty + 1, maxStock);
+        setErrorMessage("");
         return prev.map((r, i) => {
           if (i !== existingIdx) return r;
-          const newQty = r.qty + 1;
           const rawTotal = newQty * r.price;
           const taxAmount = (rawTotal * r.taxPercent) / 100;
           return {
@@ -130,11 +146,13 @@ export default function GenerateBillPage() {
             qty: newQty,
             taxAmount: parseFloat(taxAmount.toFixed(2)),
             amount: parseFloat((rawTotal + taxAmount).toFixed(2)),
+            availableStock: maxStock,
           };
         });
       }
 
       // Add new row
+      setErrorMessage("");
       const price = parseFloat(prod.sellingPrice) || 0;
       const taxPercent = parseFloat(prod.taxPercent) || 0;
       const rawTotal = 1 * price;
@@ -150,7 +168,7 @@ export default function GenerateBillPage() {
           taxPercent,
           taxAmount: parseFloat(taxAmount.toFixed(2)),
           amount: parseFloat((rawTotal + taxAmount).toFixed(2)),
-          availableStock: parseFloat(prod.currentStock) || 0,
+          availableStock: maxStock,
         },
       ];
     });
@@ -183,7 +201,15 @@ export default function GenerateBillPage() {
       prev
         .map((r, i) => {
           if (i !== idx) return r;
-          const newQty = Math.max(1, r.qty + delta);
+          const maxStock = r.availableStock !== undefined ? r.availableStock : 999999;
+          if (delta > 0 && r.qty >= maxStock) {
+            setErrorMessage(
+              `Stock limit reached: Cannot exceed available stock of ${maxStock} ${r.unit} for "${r.name}".`
+            );
+            return r;
+          }
+          setErrorMessage("");
+          const newQty = Math.min(Math.max(1, r.qty + delta), maxStock);
           const rawTotal = newQty * r.price;
           const taxAmount = (rawTotal * r.taxPercent) / 100;
           return {
@@ -198,15 +224,24 @@ export default function GenerateBillPage() {
   }
 
   function setQuantityDirect(idx: number, qtyVal: number) {
-    const newQty = Math.max(1, qtyVal);
     setRows((prev) =>
       prev.map((r, i) => {
         if (i !== idx) return r;
-        const rawTotal = newQty * r.price;
+        const maxStock = r.availableStock !== undefined ? r.availableStock : 999999;
+        let clampedQty = Math.max(1, qtyVal);
+        if (clampedQty > maxStock) {
+          setErrorMessage(
+            `Quantity clamped to maximum available stock (${maxStock} ${r.unit}) for "${r.name}".`
+          );
+          clampedQty = maxStock;
+        } else {
+          setErrorMessage("");
+        }
+        const rawTotal = clampedQty * r.price;
         const taxAmount = (rawTotal * r.taxPercent) / 100;
         return {
           ...r,
-          qty: newQty,
+          qty: clampedQty,
           taxAmount: parseFloat(taxAmount.toFixed(2)),
           amount: parseFloat((rawTotal + taxAmount).toFixed(2)),
         };
@@ -235,6 +270,16 @@ export default function GenerateBillPage() {
     if (rows.length === 0) {
       setErrorMessage("Please add at least one product to the invoice.");
       return;
+    }
+
+    // Verify bounds for all items
+    for (const r of rows) {
+      if (r.availableStock !== undefined && r.qty > r.availableStock) {
+        setErrorMessage(
+          `Stock limit exceeded: "${r.name}" has ${r.qty} units requested, but only ${r.availableStock} available.`
+        );
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -268,7 +313,9 @@ export default function GenerateBillPage() {
         throw new Error(data.error || "Failed to save invoice");
       }
 
-      setCompletedInvoice(data);
+      setCompletedInvoice(data.invoice || data);
+      // Immediately refresh products catalog to reflect deducted inventory!
+      loadData();
     } catch (err: any) {
       setErrorMessage(err.message || "Failed to process invoice");
     } finally {
@@ -285,6 +332,7 @@ export default function GenerateBillPage() {
     setCompletedInvoice(null);
     setErrorMessage("");
     setPaidAmount(0);
+    loadData();
   }
 
   const filteredCatalog = products.filter(
@@ -319,24 +367,26 @@ export default function GenerateBillPage() {
               className="bg-transparent text-white font-mono text-xs focus:outline-none"
             />
           </div>
-
-          <button
-            onClick={resetForm}
-            className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition-colors"
-          >
-            Reset
-          </button>
         </div>
       </div>
 
+      {/* Global Stock / Error Warning Alert */}
       {errorMessage && (
-        <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-xl flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          <span>{errorMessage}</span>
+        <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-2xl flex items-center justify-between gap-3 text-rose-400 text-xs font-semibold shadow-lg animate-in fade-in duration-200">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+          <button
+            onClick={() => setErrorMessage("")}
+            className="text-rose-400 hover:text-white px-2 py-0.5 rounded-lg bg-rose-500/20 text-[11px]"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
-      {/* Main Grid: Left Catalog, Right Invoice Builder */}
+      {/* Main Billing Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* LEFT 5 COLS: FAST PRODUCT CATALOG (Click to Add Effortlessly!) */}
         <div className="lg:col-span-5 space-y-3">
@@ -344,7 +394,7 @@ export default function GenerateBillPage() {
             <div className="flex items-center justify-between">
               <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                 <ShoppingBag className="w-4 h-4 text-emerald-400" />
-                <span>Quick-Pick Products (Click to Add)</span>
+                <span>Quick-Pick Catalog (Click to Add)</span>
               </h2>
               <button
                 type="button"
@@ -378,27 +428,65 @@ export default function GenerateBillPage() {
               ) : (
                 filteredCatalog.map((prod) => {
                   const inBill = rows.find((r) => r.productId === prod.id);
+                  const stockNum = parseFloat(prod.currentStock) || 0;
+                  const isOutOfStock = stockNum <= 0;
+                  const isMaxReached = inBill && inBill.qty >= stockNum;
+
                   return (
                     <div
                       key={prod.id}
-                      onClick={() => addProductToBill(prod)}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                        inBill
-                          ? "bg-emerald-500/10 border-emerald-500/40 hover:bg-emerald-500/20"
-                          : "bg-slate-950/70 border-slate-800 hover:border-slate-700 hover:bg-slate-800/40"
+                      onClick={() => {
+                        if (isOutOfStock) {
+                          setErrorMessage(`Product "${prod.name}" is OUT OF STOCK.`);
+                          return;
+                        }
+                        if (isMaxReached) {
+                          setErrorMessage(
+                            `Stock limit reached: All ${stockNum} available units of "${prod.name}" are already added to this bill.`
+                          );
+                          return;
+                        }
+                        addProductToBill(prod);
+                      }}
+                      className={`p-3 rounded-xl border transition-all flex items-center justify-between select-none ${
+                        isOutOfStock
+                          ? "bg-slate-950/40 border-rose-500/30 opacity-60 cursor-not-allowed"
+                          : isMaxReached
+                          ? "bg-amber-500/10 border-amber-500/40 cursor-not-allowed"
+                          : inBill
+                          ? "bg-emerald-500/10 border-emerald-500/40 hover:bg-emerald-500/20 cursor-pointer"
+                          : "bg-slate-950/70 border-slate-800 hover:border-slate-700 hover:bg-slate-800/40 cursor-pointer"
                       }`}
                     >
                       <div>
                         <div className="font-bold text-xs text-white flex items-center gap-1.5">
                           <span>{prod.name}</span>
                           {inBill && (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-extrabold bg-emerald-500 text-slate-950">
+                            <span
+                              className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${
+                                isMaxReached
+                                  ? "bg-amber-400 text-slate-950"
+                                  : "bg-emerald-500 text-slate-950"
+                              }`}
+                            >
                               x{inBill.qty}
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
-                          Stock: {prod.currentStock} {prod.unitOfMeasure} • Tax: {prod.taxPercent}%
+                        <div className="text-[11px] mt-0.5 flex items-center gap-1.5">
+                          {isOutOfStock ? (
+                            <span className="text-rose-400 font-bold">Out of Stock (0)</span>
+                          ) : isMaxReached ? (
+                            <span className="text-amber-400 font-bold">
+                              Max Stock In Bill ({inBill.qty}/{stockNum})
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">
+                              Stock: <strong className="text-slate-200">{stockNum} {prod.unitOfMeasure}</strong>
+                            </span>
+                          )}
+                          <span className="text-slate-600">•</span>
+                          <span className="text-slate-400">Tax: {prod.taxPercent}%</span>
                         </div>
                       </div>
 
@@ -406,7 +494,15 @@ export default function GenerateBillPage() {
                         <div className="font-mono font-extrabold text-sm text-emerald-400">
                           {formatCurrency(prod.sellingPrice)}
                         </div>
-                        <div className="text-[10px] text-slate-500">Click to add</div>
+                        <div className="text-[10px]">
+                          {isOutOfStock ? (
+                            <span className="text-rose-400 font-bold">No stock</span>
+                          ) : isMaxReached ? (
+                            <span className="text-amber-400 font-bold">Limit reached</span>
+                          ) : (
+                            <span className="text-slate-500">Click to add</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -438,9 +534,11 @@ export default function GenerateBillPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-              {/* Buyer Name with Search Dropdown */}
+              {/* Buyer Name / Search dropdown */}
               <div className="relative">
-                <label className="block text-slate-400 font-semibold mb-1">Name *</label>
+                <label className="block text-slate-400 font-semibold mb-1">
+                  Customer Name *
+                </label>
                 <input
                   type="text"
                   value={buyerName}
@@ -544,12 +642,22 @@ export default function GenerateBillPage() {
                         <td className="px-3 py-2.5 text-center font-mono text-slate-500">{idx + 1}</td>
                         <td className="px-3 py-2.5 font-bold text-white">
                           <div>{row.name}</div>
-                          <div className="text-[10px] text-slate-400 font-normal">
-                            Unit: {row.unit} • GST: {row.taxPercent}%
+                          <div className="text-[10px] text-slate-400 font-normal flex items-center gap-1.5 mt-0.5">
+                            <span>Unit: {row.unit}</span>
+                            <span>•</span>
+                            <span>GST: {row.taxPercent}%</span>
+                            {row.availableStock !== undefined && (
+                              <>
+                                <span>•</span>
+                                <span className="font-mono text-emerald-400 font-semibold">
+                                  Max Stock: {row.availableStock}
+                                </span>
+                              </>
+                            )}
                           </div>
                         </td>
 
-                        {/* Quantity with +/- Buttons */}
+                        {/* Quantity with +/- Buttons clamped to availableStock */}
                         <td className="px-3 py-2.5 text-center">
                           <div className="inline-flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-lg p-0.5">
                             <button
@@ -562,14 +670,21 @@ export default function GenerateBillPage() {
                             <input
                               type="number"
                               min="1"
+                              max={row.availableStock}
                               value={row.qty}
                               onChange={(e) => setQuantityDirect(idx, parseFloat(e.target.value) || 1)}
                               className="w-10 text-center font-bold text-white bg-transparent text-xs focus:outline-none"
                             />
                             <button
                               type="button"
+                              disabled={row.availableStock !== undefined && row.qty >= row.availableStock}
                               onClick={() => updateQuantity(idx, 1)}
-                              className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800"
+                              className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-25 disabled:cursor-not-allowed"
+                              title={
+                                row.availableStock !== undefined && row.qty >= row.availableStock
+                                  ? `Stock limit reached (${row.availableStock})`
+                                  : "Increase quantity"
+                              }
                             >
                               <Plus className="w-3 h-3" />
                             </button>
