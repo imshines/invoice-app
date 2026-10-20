@@ -5,6 +5,7 @@ import { db } from "../db";
 import { users, organizations } from "../db/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 
 export const authRoute = new Hono()
   .post(
@@ -35,6 +36,14 @@ export const authRoute = new Hono()
         .where(eq(organizations.id, user.organizationId!))
         .limit(1);
 
+      // Set cookie session
+      setCookie(c, "user_session", user.id, {
+        path: "/",
+        httpOnly: true,
+        maxAge: 60 * 60 * 24 * 7, // 7 days
+        sameSite: "Lax",
+      });
+
       return c.json({
         user: {
           id: user.id,
@@ -47,12 +56,22 @@ export const authRoute = new Hono()
     }
   )
   .get("/me", async (c) => {
-    // Default to the first org & admin user in dev
-    const [user] = await db.select().from(users).limit(1);
+    const sessionUserId = getCookie(c, "user_session");
+
+    let user;
+    if (sessionUserId) {
+      [user] = await db.select().from(users).where(eq(users.id, sessionUserId)).limit(1);
+    }
+
+    // Default to the first admin user in database if no session cookie
+    if (!user) {
+      [user] = await db.select().from(users).limit(1);
+    }
+
     const [org] = await db.select().from(organizations).limit(1);
 
-    if (!user || !org) {
-      return c.json({ error: "No organization found" }, 404);
+    if (!user) {
+      return c.json({ user: null, organization: org || null });
     }
 
     return c.json({
@@ -64,4 +83,8 @@ export const authRoute = new Hono()
       },
       organization: org,
     });
+  })
+  .post("/logout", async (c) => {
+    deleteCookie(c, "user_session", { path: "/" });
+    return c.json({ success: true });
   });

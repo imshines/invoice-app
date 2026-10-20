@@ -56,7 +56,7 @@ export const invoicesRoute = new Hono()
       .limit(1);
     const [org] = await db.select().from(organizations).limit(1);
 
-    // Generate fresh dynamic UPI QR for this invoice if not paid in full
+    // Generate dynamic UPI QR for this invoice if not paid in full
     let upiData = { upiUrl: "", qrDataUrl: "" };
     if (org && org.upiVpa && Number(inv.balanceAmount) > 0) {
       upiData = await generateDynamicUpiQr({
@@ -70,8 +70,8 @@ export const invoicesRoute = new Hono()
     return c.json({
       invoice: inv,
       items,
-      customer,
-      organization: org,
+      customer: customer || inv.customerSnapshot,
+      organization: org || inv.sellerSnapshot,
       upi: upiData,
     });
   })
@@ -80,12 +80,18 @@ export const invoicesRoute = new Hono()
     zValidator(
       "json",
       z.object({
-        customerId: z.string().uuid(),
+        customerId: z.string().optional(),
+        customerName: z.string().optional(),
+        customerPhone: z.string().optional(),
+        customerArea: z.string().optional(),
         invoiceType: z.enum(["TAX_INVOICE", "RETAIL_BILL", "PROFORMA", "QUOTATION"]).default("TAX_INVOICE"),
         items: z
           .array(
             z.object({
-              productId: z.string().uuid(),
+              productId: z.string().optional(),
+              name: z.string().optional(),
+              unitOfMeasure: z.string().optional(),
+              taxPercent: z.number().optional(),
               quantity: z.number().positive(),
               unitPrice: z.number().nonnegative(),
               discountPercent: z.number().min(0).max(100).default(0),
@@ -98,7 +104,17 @@ export const invoicesRoute = new Hono()
       })
     ),
     async (c) => {
-      const { customerId, invoiceType, items, paymentMode, paidAmount, notes } = c.req.valid("json");
+      const {
+        customerId,
+        customerName,
+        customerPhone,
+        customerArea,
+        invoiceType,
+        items,
+        paymentMode,
+        paidAmount,
+        notes,
+      } = c.req.valid("json");
 
       // 1. Fetch Organization details
       const [org] = await db.select().from(organizations).limit(1);
@@ -106,51 +122,96 @@ export const invoicesRoute = new Hono()
         return c.json({ error: "Organization profile not configured" }, 400);
       }
 
-      // 2. Fetch Customer details
-      const [cust] = await db.select().from(customers).where(eq(customers.id, customerId)).limit(1);
-      if (!cust) {
-        return c.json({ error: "Customer not found" }, 404);
+      // 2. Fetch or Auto-create Customer on the fly (never fail because customer doesn't exist)
+      let cust;
+      if (customerId) {
+        [cust] = await db.select().from(customers).where(eq(customers.id, customerId)).limit(1);
       }
 
-      // 3. Fetch product details and check stock
-      const productIds = items.map((i) => i.productId);
-      const dbProducts = await db.select().from(products).where(sql`${products.id} IN ${productIds}`);
+      if (!cust && customerPhone && customerPhone.trim().length > 3) {
+        [cust] = await db.select().from(customers).where(eq(customers.phone, customerPhone.trim())).limit(1);
+      }
 
-      const productMap = new Map(dbProducts.map((p) => [p.id, p]));
+      if (!cust) {
+        // Auto-create customer on the fly
+        const finalName = customerName?.trim() || "Walk-in Buyer";
+        const finalPhone = customerPhone?.trim() || "Walk-in";
+        const finalArea = customerArea?.trim() || "Local";
 
-      // Check product existence and stock
+        [cust] = await db
+          .insert(customers)
+          .values({
+            organizationId: org.id,
+            name: finalName,
+            phone: finalPhone,
+            area: finalArea,
+            billingAddress: finalArea,
+            city: org.city || "Local",
+            state: org.state || "Tamil Nadu",
+            stateCode: org.stateCode || "33",
+          })
+          .returning();
+      }
+
+      // 3. Process products and check or auto-create items
+      const resolvedItems: Array<{
+        product: any;
+        quantity: number;
+        unitPrice: number;
+        discountPercent: number;
+      }> = [];
+
       for (const item of items) {
-        const prod = productMap.get(item.productId);
+        let prod;
+        if (item.productId) {
+          [prod] = await db.select().from(products).where(eq(products.id, item.productId)).limit(1);
+        }
+
+        // If product not in catalog, create an ad-hoc product on the fly
         if (!prod) {
-          return c.json({ error: `Product with ID ${item.productId} not found` }, 400);
+          const prodName = item.name || "Custom Item";
+          [prod] = await db
+            .insert(products)
+            .values({
+              organizationId: org.id,
+              name: prodName,
+              unitOfMeasure: item.unitOfMeasure || "PCS",
+              purchasePrice: (item.unitPrice * 0.8).toFixed(2),
+              sellingPrice: item.unitPrice.toFixed(2),
+              taxPercent: (item.taxPercent || 0).toFixed(2),
+              currentStock: "1000.00", // virtual stock for ad-hoc items
+            })
+            .returning();
         }
-        if (Number(prod.currentStock) < item.quantity) {
-          return c.json(
-            {
-              error: `Insufficient stock for '${prod.name}'. Available: ${prod.currentStock}, Requested: ${item.quantity}`,
-            },
-            400
-          );
-        }
+
+        resolvedItems.push({
+          product: prod,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          discountPercent: item.discountPercent,
+        });
       }
 
       // 4. Calculate Taxes & Totals
-      const taxItems = items.map((item) => {
-        const prod = productMap.get(item.productId)!;
+      const taxItems = resolvedItems.map((r) => {
         return {
-          productId: prod.id,
-          itemName: prod.name,
-          hsnSac: prod.hsnSac,
-          unitOfMeasure: prod.unitOfMeasure,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          unitCost: Number(prod.purchasePrice),
-          taxPercent: Number(prod.taxPercent),
-          discountPercent: item.discountPercent,
+          productId: r.product.id,
+          itemName: r.product.name,
+          hsnSac: r.product.hsnSac || "9999",
+          unitOfMeasure: r.product.unitOfMeasure || "PCS",
+          quantity: r.quantity,
+          unitPrice: r.unitPrice,
+          unitCost: Number(r.product.purchasePrice) || 0,
+          taxPercent: Number(r.product.taxPercent) || 0,
+          discountPercent: r.discountPercent,
         };
       });
 
-      const taxResult = calculateInvoiceTaxes(taxItems, org.stateCode, cust.stateCode || org.stateCode);
+      const taxResult = calculateInvoiceTaxes(
+        taxItems,
+        org.stateCode || "33",
+        cust.stateCode || org.stateCode || "33"
+      );
 
       // Determine payment status
       const grandTotal = taxResult.grandTotal;
@@ -234,32 +295,38 @@ export const invoicesRoute = new Hono()
             totalAmount: item.totalAmount.toFixed(2),
           });
 
-          // Atomic stock deduction
-          const prod = productMap.get(item.productId)!;
-          const updatedStock = Number(prod.currentStock) - item.quantity;
+          // Stock deduction
+          const [currentProd] = await tx
+            .select()
+            .from(products)
+            .where(eq(products.id, item.productId))
+            .limit(1);
 
-          await tx
-            .update(products)
-            .set({
-              currentStock: updatedStock.toFixed(2),
-              updatedAt: new Date(),
-            })
-            .where(eq(products.id, item.productId));
+          if (currentProd) {
+            const updatedStock = Number(currentProd.currentStock) - item.quantity;
+            await tx
+              .update(products)
+              .set({
+                currentStock: updatedStock.toFixed(2),
+                updatedAt: new Date(),
+              })
+              .where(eq(products.id, item.productId));
 
-          // Log REA Stock Movement
-          await tx.insert(stockMovements).values({
-            organizationId: org.id,
-            productId: item.productId,
-            movementType: "SALE_INVOICE",
-            referenceId: inv.id,
-            quantityDelta: (-item.quantity).toFixed(2),
-            unitCost: item.unitCost.toFixed(2),
-            balanceAfterMovement: updatedStock.toFixed(2),
-            notes: `Sale invoice ${invoiceNumber}`,
-          });
+            // Log Stock Movement
+            await tx.insert(stockMovements).values({
+              organizationId: org.id,
+              productId: item.productId,
+              movementType: "SALE_INVOICE",
+              referenceId: inv.id,
+              quantityDelta: (-item.quantity).toFixed(2),
+              unitCost: item.unitCost.toFixed(2),
+              balanceAfterMovement: updatedStock.toFixed(2),
+              notes: `Sale invoice ${invoiceNumber}`,
+            });
+          }
         }
 
-        // C. Record Payment if paid > 0 (REA Economic Duality)
+        // C. Record Payment if paid > 0
         if (actualPaid > 0) {
           await tx.insert(payments).values({
             organizationId: org.id,
@@ -273,7 +340,7 @@ export const invoicesRoute = new Hono()
           });
         }
 
-        // D. Update Customer Khata Balance (Accounts Receivable)
+        // D. Update Customer Khata Balance
         if (balanceAmount > 0) {
           const newCustomerBalance = Number(cust.currentBalance || 0) + balanceAmount;
           await tx
@@ -285,7 +352,7 @@ export const invoicesRoute = new Hono()
             .where(eq(customers.id, cust.id));
         }
 
-        // E. Increment Organization Invoice Number
+        // E. Increment Organization Invoice Sequence
         await tx
           .update(organizations)
           .set({
