@@ -1,13 +1,13 @@
-import { db } from "./src/server/db";
-import { users, products, organizations, invoices, invoiceItems } from "./src/server/db/schema";
+import { db } from "../src/server/db";
+import { users, products, organizations, invoices, invoiceItems } from "../src/server/db/schema";
 import { eq } from "drizzle-orm";
 
 const BASE_URL = "http://localhost:3000";
 
 async function runTests() {
-  console.log("=== STARTING RIGOROUS AUTH & INVENTORY TEST SUITE ===");
+  console.log("=== STARTING RIGOROUS AUTH & GENERIC DATA TEST SUITE ===");
 
-  // 0. Ensure dev server is running and database is populated
+  // 0. Ensure dev server is running
   const healthRes = await fetch(`${BASE_URL}/api/health`);
   console.log("1. Healthcheck Status:", healthRes.status);
   const healthData = await healthRes.json();
@@ -30,7 +30,7 @@ async function runTests() {
   const badLogin = await fetch(`${BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "admin@srihari.com", password: "wrongpassword" }),
+    body: JSON.stringify({ email: "admin@metro.com", password: "wrongpassword" }),
   });
   console.log("Bad login status:", badLogin.status);
   if (badLogin.status === 401) {
@@ -40,12 +40,12 @@ async function runTests() {
     process.exit(1);
   }
 
-  // 3. Test Admin Login
-  console.log("\n--- TEST: Admin Login ---");
+  // 3. Test Admin Login (Metro Admin)
+  console.log("\n--- TEST: Admin Login (admin@metro.com) ---");
   const adminLogin = await fetch(`${BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "admin@srihari.com", password: "admin123" }),
+    body: JSON.stringify({ email: "admin@metro.com", password: "admin123" }),
   });
   const adminCookie = adminLogin.headers.get("set-cookie") || "";
   const adminData = await adminLogin.json();
@@ -76,12 +76,12 @@ async function runTests() {
     process.exit(1);
   }
 
-  // 5. Test Cashier Login & RBAC Enforcement
+  // 5. Test Cashier Login & RBAC Enforcement (Metro Cashier)
   console.log("\n--- TEST: Cashier Login & RBAC Forbidden Endpoints ---");
   const cashierLogin = await fetch(`${BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "cashier@srihari.com", password: "admin123" }),
+    body: JSON.stringify({ email: "cashier@metro.com", password: "admin123" }),
   });
   const cashierCookie = cashierLogin.headers.get("set-cookie") || "";
   const cashierData = await cashierLogin.json();
@@ -110,8 +110,6 @@ async function runTests() {
     body: JSON.stringify({ company: "Hacked Company Name" }),
   });
   console.log("Cashier /api/organization/current status:", cashierCompanyRes.status);
-  const cashierCompanyData = await cashierCompanyRes.json();
-  console.log("Cashier /api/organization/current response:", cashierCompanyData);
   if (cashierCompanyRes.status === 403) {
     console.log("✅ PASS: Cashier is strictly FORBIDDEN (403) from modifying company profile!");
   } else {
@@ -140,32 +138,32 @@ async function runTests() {
   // 6. Test STRICT Negative Inventory Enforcement
   console.log("\n--- TEST: Negative Inventory Prevention & Stock Validation ---");
 
-  // Find Lux Soap Blue (current stock should be 8.00)
-  const [soap] = await db.select().from(products).where(eq(products.name, "Lux Soap Blue")).limit(1);
+  // Find Lux Soap (current stock should be 15.00)
+  const [soap] = await db
+    .select()
+    .from(products)
+    .where(eq(products.name, "Lux Velvet Touch Rose Beauty Soap 100g"))
+    .limit(1);
   console.log("Current product:", soap.name, "Current stock:", soap.currentStock);
 
-  // Set stock to exactly 8.00 for the test
-  await db.update(products).set({ currentStock: "8.00" }).where(eq(products.id, soap.id));
-  console.log("Reset Lux Soap Blue stock to exactly 8.00 PCS");
-
-  // User tries to generate invoice with quantity 10 (exceeding stock of 8)
-  console.log("\nAttempting to invoice quantity: 10 for product with stock: 8.00...");
+  // User tries to generate invoice with quantity 20 (exceeding stock of 15)
+  console.log("\nAttempting to invoice quantity: 20 for product with stock: 15.00...");
   const overOrderRes = await fetch(`${BASE_URL}/api/invoices`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: cashierSessionCookie },
     body: JSON.stringify({
-      customerName: "Stock Test Buyer",
+      customerName: "Generic Test Buyer",
       customerPhone: "9988776655",
       items: [
         {
           productId: soap.id,
           name: soap.name,
-          quantity: 10,
+          quantity: 20,
           unitPrice: Number(soap.sellingPrice),
         },
       ],
       paymentMode: "CASH",
-      paidAmount: 200,
+      paidAmount: 800,
     }),
   });
 
@@ -174,13 +172,13 @@ async function runTests() {
   console.log("Over-order API Response:", overOrderData);
 
   if (overOrderRes.status === 400 && overOrderData.error.includes("Insufficient stock")) {
-    console.log("✅ PASS: API rejected order of 10 with 400 Bad Request & clear stock message!");
+    console.log("✅ PASS: API rejected order of 20 with 400 Bad Request & clear stock message!");
   } else {
     console.error("❌ FAIL: API did not reject over-order!");
     process.exit(1);
   }
 
-  // Verify stock in PostgreSQL did NOT change or become negative (-2)
+  // Verify stock in PostgreSQL did NOT change or become negative (-5)
   const [soapAfterFailedOrder] = await db
     .select()
     .from(products)
@@ -189,17 +187,55 @@ async function runTests() {
   console.log(
     "Stock in PostgreSQL after failed over-order:",
     soapAfterFailedOrder.currentStock,
-    "(Expected: 8.00, NOT -2.00)"
+    "(Expected: 15.00, NOT -5.00)"
   );
-  if (Number(soapAfterFailedOrder.currentStock) === 8) {
-    console.log("✅ PASS: Stock in PostgreSQL remains safely intact at 8.00!");
+  if (Number(soapAfterFailedOrder.currentStock) === 15) {
+    console.log("✅ PASS: Stock in PostgreSQL remains safely intact at 15.00!");
   } else {
     console.error("❌ FAIL: Stock was modified or went negative!");
     process.exit(1);
   }
 
-  // Now create a valid invoice for quantity 3 (within available stock of 8)
-  console.log("\nAttempting valid invoice for quantity: 3 (stock: 8.00)...");
+  // 7. Test Out of Stock Item (Ariel Pods stock: 0)
+  console.log("\n--- TEST: Out of Stock Product Prevention (Stock = 0) ---");
+  const [outOfStockItem] = await db
+    .select()
+    .from(products)
+    .where(eq(products.name, "Ariel 3-in-1 Detergent Pods 18ct"))
+    .limit(1);
+  console.log("Product:", outOfStockItem.name, "Stock:", outOfStockItem.currentStock);
+
+  const zeroStockOrder = await fetch(`${BASE_URL}/api/invoices`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cashierSessionCookie },
+    body: JSON.stringify({
+      customerName: "Zero Stock Buyer",
+      customerPhone: "9988776655",
+      items: [
+        {
+          productId: outOfStockItem.id,
+          name: outOfStockItem.name,
+          quantity: 1,
+          unitPrice: Number(outOfStockItem.sellingPrice),
+        },
+      ],
+      paymentMode: "CASH",
+      paidAmount: 500,
+    }),
+  });
+
+  console.log("Zero stock order HTTP Status:", zeroStockOrder.status);
+  const zeroStockData = await zeroStockOrder.json();
+  console.log("Zero stock response:", zeroStockData);
+  if (zeroStockOrder.status === 400 && zeroStockData.error.includes("out of stock")) {
+    console.log("✅ PASS: Ordering an out-of-stock product was completely blocked!");
+  } else {
+    console.error("❌ FAIL: Zero stock order was not blocked!");
+    process.exit(1);
+  }
+
+  // 8. Test Valid Order
+  console.log("\n--- TEST: Valid Order within Available Stock ---");
   const validOrderRes = await fetch(`${BASE_URL}/api/invoices`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: cashierSessionCookie },
@@ -215,7 +251,7 @@ async function runTests() {
         },
       ],
       paymentMode: "CASH",
-      paidAmount: 100,
+      paidAmount: 120,
     }),
   });
 
@@ -230,7 +266,7 @@ async function runTests() {
     process.exit(1);
   }
 
-  // Verify stock is now exactly 8 - 3 = 5
+  // Verify stock is now exactly 15 - 3 = 12
   const [soapAfterValidOrder] = await db
     .select()
     .from(products)
@@ -239,21 +275,20 @@ async function runTests() {
   console.log(
     "Stock in PostgreSQL after order of 3:",
     soapAfterValidOrder.currentStock,
-    "(Expected: 5.00)"
+    "(Expected: 12.00)"
   );
-  if (Number(soapAfterValidOrder.currentStock) === 5) {
-    console.log("✅ PASS: Stock was accurately decremented to 5.00!");
+  if (Number(soapAfterValidOrder.currentStock) === 12) {
+    console.log("✅ PASS: Stock was accurately decremented to 12.00!");
   } else {
     console.error("❌ FAIL: Stock decrement calculation error!");
     process.exit(1);
   }
 
-  // Reset stock back to 8.00 for clean state
-  await db.update(products).set({ currentStock: "8.00" }).where(eq(products.id, soap.id));
-  console.log("\nLux Soap Blue stock reset back to 8.00 for normal operation.");
+  // Restore stock back to 15.00
+  await db.update(products).set({ currentStock: "15.00" }).where(eq(products.id, soap.id));
 
   console.log("\n=======================================================");
-  console.log("🎉 ALL TESTS PASSED SUCCESSFULLY! ZERO BUGS DETECTED.");
+  console.log("🎉 ALL TESTS PASSED WITH CLEAN GENERIC DATASET!");
   console.log("=======================================================\n");
   process.exit(0);
 }

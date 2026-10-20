@@ -126,27 +126,27 @@ function LoginForm() {
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => setDemoAccount("admin@srihari.com", "admin123")}
+              onClick={() => setDemoAccount("admin@metro.com", "admin123")}
               className="p-2.5 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 text-left transition-colors"
             >
               <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-bold">
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>Admin User</span>
               </div>
-              <div className="text-[10px] text-slate-400 font-mono mt-0.5">admin@srihari.com</div>
-              <div className="text-[9px] text-slate-500 font-mono">Full Access</div>
+              <div className="text-[10px] text-slate-300 font-mono mt-0.5">admin@metro.com</div>
+              <div className="text-[9px] text-slate-500 font-mono">Full Access (admin123)</div>
             </button>
             <button
               type="button"
-              onClick={() => setDemoAccount("cashier@srihari.com", "admin123")}
+              onClick={() => setDemoAccount("cashier@metro.com", "admin123")}
               className="p-2.5 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 text-left transition-colors"
             >
               <div className="flex items-center gap-1.5 text-blue-400 text-xs font-bold">
                 <UserCheck className="w-3.5 h-3.5" />
                 <span>Cashier Staff</span>
               </div>
-              <div className="text-[10px] text-slate-400 font-mono mt-0.5">cashier@srihari.com</div>
-              <div className="text-[9px] text-slate-500 font-mono">Billing Only</div>
+              <div className="text-[10px] text-slate-300 font-mono mt-0.5">cashier@metro.com</div>
+              <div className="text-[9px] text-slate-500 font-mono">Billing Only (admin123)</div>
             </button>
           </div>
         </div>
