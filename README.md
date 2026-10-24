@@ -1,4 +1,4 @@
-# Sri Hari Traders — Modern Billing, Inventory & Khata ERP
+# Metro Supermarket & Wholesale — Modern Billing, Inventory & Khata ERP
 
 A complete, enterprise-grade rewrite of the legacy PHP/MySQL billing application into a high-speed, modern full-stack web application built with **Next.js 16 (App Router & Turbopack)**, **Hono Backend**, **PostgreSQL 18**, **Drizzle ORM**, and **Tailwind CSS**.
 

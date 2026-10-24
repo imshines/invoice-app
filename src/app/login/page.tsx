@@ -82,7 +82,7 @@ function LoginForm() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@srihari.com"
+                placeholder="admin@metro.com"
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono"
               />
               <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-3" />

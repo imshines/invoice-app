@@ -65,25 +65,9 @@ async function seed() {
     .values([
       {
         organizationId: org.id,
-        email: "admin@srihari.com",
-        fullName: "System Admin (Dhamodharan)",
-        phone: "9876501234",
-        passwordHash,
-        role: "ORG_ADMIN",
-      },
-      {
-        organizationId: org.id,
-        email: "cashier@srihari.com",
-        fullName: "Ramesh (Billing Cashier)",
-        phone: "9876501235",
-        passwordHash,
-        role: "BILLING_CASHIER",
-      },
-      {
-        organizationId: org.id,
         email: "admin@metro.com",
-        fullName: "Store Manager (Alex)",
-        phone: "9876501236",
+        fullName: "Store Administrator (Alex)",
+        phone: "9876501234",
         passwordHash,
         role: "ORG_ADMIN",
       },
@@ -91,18 +75,25 @@ async function seed() {
         organizationId: org.id,
         email: "cashier@metro.com",
         fullName: "Priya (Counter Cashier)",
-        phone: "9876501237",
+        phone: "9876501235",
         passwordHash,
         role: "BILLING_CASHIER",
+      },
+      {
+        organizationId: org.id,
+        email: "manager@metro.com",
+        fullName: "Morgan (Inventory Manager)",
+        phone: "9876501236",
+        passwordHash,
+        role: "INVENTORY_MANAGER",
       },
     ])
     .returning();
 
-  console.log("Created 4 Auth Users:");
-  console.log("  - admin@srihari.com / admin123 (ORG_ADMIN)");
-  console.log("  - cashier@srihari.com / admin123 (BILLING_CASHIER)");
+  console.log("Created Auth Users:");
   console.log("  - admin@metro.com / admin123 (ORG_ADMIN)");
   console.log("  - cashier@metro.com / admin123 (BILLING_CASHIER)");
+  console.log("  - manager@metro.com / admin123 (INVENTORY_MANAGER)");
 
   console.log("\n=== 4. SEEDING GENERIC CUSTOMERS & KHATA LEDGER ===");
   const customerRecords = [

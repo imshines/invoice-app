@@ -210,7 +210,7 @@ export default function CompanyPage() {
               type="text"
               value={form.upiVpa}
               onChange={(e) => setForm({ ...form, upiVpa: e.target.value })}
-              placeholder="srihari@oksbi"
+              placeholder="metro@okaxis"
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs font-mono focus:outline-none focus:border-emerald-500"
             />
           </div>
